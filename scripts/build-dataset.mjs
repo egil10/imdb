@@ -14,9 +14,9 @@ import { createGunzip } from "node:zlib";
 import readline from "node:readline";
 import { resolve } from "node:path";
 
-const MIN_VOTES = 25_000;
-const MAX_MOVIES = 6000;
-const MAX_CAST = 10;
+const MIN_VOTES = 5_000;
+const MAX_MOVIES = 20_000;
+const MAX_CAST = 12;
 
 const FILES = {
   ratings: "https://datasets.imdbws.com/title.ratings.tsv.gz",
@@ -182,7 +182,7 @@ const out = {
   actors,
 };
 
-const outPath = resolve("./data/imdb.json");
+const outPath = resolve("./public/imdb.json");
 writeFileSync(outPath, JSON.stringify(out));
 const sz = statSync(outPath).size;
 log(`wrote ${outPath} (${human(sz)})`);

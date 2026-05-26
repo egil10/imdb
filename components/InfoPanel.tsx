@@ -1,10 +1,11 @@
 "use client";
 
-import { Calendar, Film, Star, Tag, Users, X } from "lucide-react";
+import { Calendar, ChevronDown, Film, Star, Tag, Users, X } from "lucide-react";
+import { useState } from "react";
 import type { Dataset, Movie } from "@/lib/dataset";
 import { Poster } from "./MovieSearch";
 
-const MAX_OTHER_FILMS_PER_ACTOR_IN_PANEL = 6;
+const COLLAPSED_FILMS_PER_ACTOR = 8;
 
 export function InfoPanel({
   dataset,
@@ -77,41 +78,15 @@ export function InfoPanel({
       <div className="mt-4 -mx-1 flex-1 overflow-auto no-scrollbar px-1">
         <SectionTitle icon={<Users className="h-3.5 w-3.5" />} text="Cast" />
         <div className="mt-1.5 grid gap-1">
-          {cast.map((a) => {
-            const others = (dataset.filmography[a.id] || []).filter((i) => i !== movie.id);
-            return (
-              <div key={a.id} className="rounded-2xl bg-white/55 hairline px-3 py-2">
-                <div className="flex items-baseline justify-between gap-2">
-                  <div className="text-[13.5px] font-medium text-ink-900">{a.name}</div>
-                  <div className="text-[10.5px] text-ink-500">
-                    {others.length} other {others.length === 1 ? "film" : "films"}
-                  </div>
-                </div>
-                {others.length > 0 && (
-                  <div className="mt-1 flex flex-wrap gap-1">
-                    {others.slice(0, MAX_OTHER_FILMS_PER_ACTOR_IN_PANEL).map((mid) => {
-                      const m = dataset.moviesById[mid]!;
-                      return (
-                        <button
-                          key={mid}
-                          onClick={() => onPickMovie(mid)}
-                          className="rounded-full bg-white px-2 py-0.5 text-[11px] text-ink-700 ring-1 ring-black/[0.05] hover:bg-ink-900 hover:text-white transition"
-                        >
-                          {m.title}
-                          <span className="ml-1 text-ink-500">{m.year}</span>
-                        </button>
-                      );
-                    })}
-                    {others.length > MAX_OTHER_FILMS_PER_ACTOR_IN_PANEL && (
-                      <span className="rounded-full bg-white/50 px-2 py-0.5 text-[11px] text-ink-500 ring-1 ring-black/[0.04]">
-                        +{others.length - MAX_OTHER_FILMS_PER_ACTOR_IN_PANEL} more
-                      </span>
-                    )}
-                  </div>
-                )}
-              </div>
-            );
-          })}
+          {cast.map((a) => (
+            <CastRow
+              key={a.id}
+              actorName={a.name}
+              films={(dataset.filmography[a.id] || []).filter((i) => i !== movie.id)}
+              dataset={dataset}
+              onPickMovie={onPickMovie}
+            />
+          ))}
         </div>
       </div>
 
@@ -121,6 +96,67 @@ export function InfoPanel({
         </span>
       </footer>
     </aside>
+  );
+}
+
+function CastRow({
+  actorName,
+  films,
+  dataset,
+  onPickMovie,
+}: {
+  actorName: string;
+  films: string[];
+  dataset: Dataset;
+  onPickMovie: (id: string) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const cap = expanded ? films.length : COLLAPSED_FILMS_PER_ACTOR;
+  const shown = films.slice(0, cap);
+  const hidden = films.length - shown.length;
+
+  return (
+    <div className="rounded-2xl bg-white/55 hairline px-3 py-2">
+      <div className="flex items-baseline justify-between gap-2">
+        <div className="text-[13.5px] font-medium text-ink-900">{actorName}</div>
+        <div className="text-[10.5px] text-ink-500">
+          {films.length} other {films.length === 1 ? "film" : "films"}
+        </div>
+      </div>
+      {films.length > 0 && (
+        <div className="mt-1 flex flex-wrap gap-1">
+          {shown.map((mid) => {
+            const m = dataset.moviesById[mid]!;
+            return (
+              <button
+                key={mid}
+                onClick={() => onPickMovie(mid)}
+                className="rounded-full bg-white px-2 py-0.5 text-[11px] text-ink-700 ring-1 ring-black/[0.05] hover:bg-ink-900 hover:text-white transition"
+              >
+                {m.title}
+                <span className="ml-1 text-ink-500">{m.year}</span>
+              </button>
+            );
+          })}
+          {hidden > 0 && (
+            <button
+              onClick={() => setExpanded(true)}
+              className="inline-flex items-center gap-0.5 rounded-full bg-white/80 px-2 py-0.5 text-[11px] font-medium text-violet-700 ring-1 ring-violet-300/40 hover:bg-white"
+            >
+              +{hidden} more <ChevronDown className="h-3 w-3" />
+            </button>
+          )}
+          {expanded && films.length > COLLAPSED_FILMS_PER_ACTOR && (
+            <button
+              onClick={() => setExpanded(false)}
+              className="rounded-full bg-white/60 px-2 py-0.5 text-[11px] text-ink-500 ring-1 ring-black/[0.04] hover:bg-white"
+            >
+              show fewer
+            </button>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 

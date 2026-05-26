@@ -3,9 +3,10 @@
 Pick a film and see the cloud of every other movie its cast has been in — and
 play *Six Degrees* between any two films.
 
-Bundled with **6,000 films and ~27,000 actors** built directly from the official
+Bundled with **18,812 films and ~78,500 actors** built directly from the official
 [IMDb non-commercial datasets](https://developer.imdb.com/non-commercial-datasets/),
-filtered to titles with ≥ 25,000 votes for a dense, recognisable network.
+filtered to titles with ≥ 5,000 votes for a dense, recognisable network.
+Movie nodes are sized by vote count so the box-office heavyweights pop visually.
 
 ## Stack
 - Next.js 15 (App Router) — Vercel deploy, no config needed
@@ -13,7 +14,7 @@ filtered to titles with ≥ 25,000 votes for a dense, recognisable network.
 - `react-force-graph-2d` for the canvas
 - `lucide-react` icons
 - iOS-style glass + pill aesthetic, light theme
-- Dataset loaded on demand from `/imdb.json` (~2.5 MB, cached after first visit)
+- Dataset loaded on demand from `/imdb.json` (7.5 MB raw / ~2.2 MB gzipped, cached after first visit)
 
 ## Develop
 

@@ -88,7 +88,16 @@ export function NetworkGraph({
           const isHighlighted = highlightPath?.has(node.id);
           const isActor = node.type === "actor";
 
-          const r = isFocal ? 12 : isActor ? 5.5 : 8;
+          // Radius scales with popularity (weight is 0..1).
+          // Movies: 3.5 → 11 (radius gets larger with vote count).
+          // Actors: 3 → 7.5  (radius gets larger with filmography size).
+          // Focal node is always bumped to ~14 so it dominates visually.
+          const w = typeof node.weight === "number" ? node.weight : 0.4;
+          let r: number;
+          if (isFocal) r = 14;
+          else if (isActor) r = 3 + w * 4.5;
+          else r = 3.5 + w * 7.5;
+
           const label = node.label as string;
 
           // Skip render until force layout has assigned finite coordinates.

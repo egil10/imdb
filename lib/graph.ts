@@ -6,6 +6,9 @@ export type GraphNode = {
   label: string;
   year?: number;
   hue?: number;
+  // Popularity weight — used by NetworkGraph to scale node radius.
+  // For movies: log10(votes). For actors: log10(filmography size).
+  weight?: number;
 };
 
 export type GraphLink = { source: string; target: string };
@@ -14,9 +17,23 @@ export type GraphData = { nodes: GraphNode[]; links: GraphLink[] };
 // Cap how many of an actor's other films we surface in a focal-movie graph.
 // IMDb veterans like Samuel L. Jackson have 100+ entries — without a cap, one
 // focal film can explode the graph into hundreds of nodes.
-const MAX_OTHER_FILMS_PER_ACTOR = 6;
+const MAX_OTHER_FILMS_PER_ACTOR = 8;
 
 import { hueFor } from "./dataset";
+
+// Map raw popularity to a 0..1 "weight" the renderer uses for node radius.
+// votes ranges from ~5k to ~3M, so log10(votes) ranges ~3.7 to ~6.5 — we
+// rescale that to 0..1 so the smallest dot is still visible.
+function weightForVotes(votes: number): number {
+  const v = Math.max(1, votes || 1);
+  const x = (Math.log10(v) - 3.5) / (6.5 - 3.5);
+  return Math.max(0, Math.min(1, x));
+}
+function weightForActorFilms(count: number): number {
+  if (count <= 1) return 0;
+  const x = (Math.log10(count) - 0) / (Math.log10(100) - 0);
+  return Math.max(0, Math.min(1, x));
+}
 
 export function buildMovieGraph(d: Dataset, movieId: string): GraphData {
   const focal = d.moviesById[movieId];
@@ -42,14 +59,17 @@ export function buildMovieGraph(d: Dataset, movieId: string): GraphData {
     label: focal.title,
     year: focal.year,
     hue: hueFor(focal),
+    weight: weightForVotes(focal.votes),
   });
 
   for (const actorId of focal.cast) {
     const actorNodeId = `actor:${actorId}`;
+    const filmCount = (d.filmography[actorId] || []).length;
     addNode({
       id: actorNodeId,
       type: "actor",
       label: d.actorNamesById[actorId] || actorId,
+      weight: weightForActorFilms(filmCount),
     });
     addLink(`movie:${focal.id}`, actorNodeId);
 
@@ -64,6 +84,7 @@ export function buildMovieGraph(d: Dataset, movieId: string): GraphData {
         label: m.title,
         year: m.year,
         hue: hueFor(m),
+        weight: weightForVotes(m.votes),
       });
       addLink(actorNodeId, mNodeId);
     }
