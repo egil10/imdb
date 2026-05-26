@@ -16,11 +16,13 @@ const ForceGraph2D = dynamic(() => import("react-force-graph-2d"), {
 export function NetworkGraph({
   data,
   focalId,
+  targetId,
   onNodeClick,
   highlightPath,
 }: {
   data: GraphData;
   focalId?: string; // e.g. "movie:oppenheimer"
+  targetId?: string; // game mode: emerald target ring
   onNodeClick?: (n: GraphNode) => void;
   highlightPath?: Set<string>;
 }) {
@@ -38,6 +40,22 @@ export function NetworkGraph({
     ro.observe(ref.current);
     return () => ro.disconnect();
   }, []);
+
+  // Tune the underlying d3-force layout to give nodes more breathing room.
+  useEffect(() => {
+    const fg = fgRef.current;
+    if (!fg) return;
+    fg.d3Force("charge")?.strength(-260).distanceMax(420);
+    fg.d3Force("link")?.distance((l: any) => {
+      const sIsActor =
+        typeof l.source === "object" ? l.source.type === "actor" : false;
+      const tIsActor =
+        typeof l.target === "object" ? l.target.type === "actor" : false;
+      // actor ↔ other-movie spokes pushed further out than focal ↔ actor edges
+      return sIsActor && tIsActor ? 90 : 70;
+    });
+    fg.d3Force("center")?.strength(0.06);
+  });
 
   // memoize graph data so the force layout doesn't re-init constantly.
   const gdata = useMemo(
@@ -85,6 +103,7 @@ export function NetworkGraph({
         }}
         nodeCanvasObject={(node: any, ctx, globalScale) => {
           const isFocal = node.id === focalId;
+          const isTarget = node.id === targetId;
           const isHighlighted = highlightPath?.has(node.id);
           const isActor = node.type === "actor";
 
@@ -107,8 +126,23 @@ export function NetworkGraph({
           ctx.beginPath();
           ctx.arc(node.x, node.y, r, 0, 2 * Math.PI, false);
 
-          if (isFocal) {
-            // glowy focal node
+          if (isTarget) {
+            // emerald glow for the game target
+            const g = ctx.createRadialGradient(node.x, node.y, 1, node.x, node.y, r * 2.4);
+            g.addColorStop(0, "rgba(16,185,129,1)");
+            g.addColorStop(0.6, "rgba(52,211,153,0.95)");
+            g.addColorStop(1, "rgba(52,211,153,0)");
+            ctx.fillStyle = g;
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(node.x, node.y, r, 0, 2 * Math.PI);
+            ctx.fillStyle = "#10b981";
+            ctx.fill();
+            ctx.lineWidth = 1.5;
+            ctx.strokeStyle = "white";
+            ctx.stroke();
+          } else if (isFocal) {
+            // violet glow for the focal / current node
             const g = ctx.createRadialGradient(node.x, node.y, 1, node.x, node.y, r * 2.2);
             g.addColorStop(0, "rgba(124,58,237,1)");
             g.addColorStop(0.6, "rgba(168,85,247,0.95)");
@@ -144,8 +178,8 @@ export function NetworkGraph({
             ctx.stroke();
           }
 
-          // labels: focal always, others when zoomed in or highlighted
-          const show = isFocal || isHighlighted || globalScale > 1.6;
+          // labels: focal/target always, others when zoomed in or highlighted
+          const show = isFocal || isTarget || isHighlighted || globalScale > 1.6;
           if (show) {
             const fontSize = isFocal ? 13 / Math.max(1, globalScale * 0.9) + 4 : 10 / globalScale + 2;
             ctx.font = `${isFocal ? 600 : 500} ${fontSize}px -apple-system, "SF Pro Text", Inter, sans-serif`;
