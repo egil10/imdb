@@ -1,16 +1,19 @@
 "use client";
 
-import { Search, X } from "lucide-react";
+import { Search, Star, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { MOVIES, type Movie } from "@/data/movies";
+import type { Dataset, Movie } from "@/lib/dataset";
+import { hueFor } from "@/lib/dataset";
 
 export function MovieSearch({
+  dataset,
   value,
   onChange,
   placeholder = "Search films…",
   size = "lg",
   autoFocus = false,
 }: {
+  dataset: Dataset | null;
   value: Movie | null;
   onChange: (m: Movie) => void;
   placeholder?: string;
@@ -29,28 +32,36 @@ export function MovieSearch({
     return () => window.removeEventListener("mousedown", onClick);
   }, []);
 
+  // Index sorted by votes desc so default results are recognizable.
+  const sortedAll = useMemo(() => {
+    if (!dataset) return [];
+    return [...dataset.movies].sort((a, b) => b.votes - a.votes);
+  }, [dataset]);
+
   const results = useMemo(() => {
     const t = q.trim().toLowerCase();
-    if (!t) return MOVIES.slice(0, 12);
-    return MOVIES.filter(
-      (m) =>
+    if (!dataset) return [];
+    if (!t) return sortedAll.slice(0, 14);
+    const matched: Movie[] = [];
+    const len = sortedAll.length;
+    for (let i = 0; i < len && matched.length < 30; i++) {
+      const m = sortedAll[i];
+      if (
         m.title.toLowerCase().includes(t) ||
-        String(m.year).startsWith(t),
-    ).slice(0, 24);
-  }, [q]);
+        String(m.year).startsWith(t)
+      ) {
+        matched.push(m);
+      }
+    }
+    return matched;
+  }, [q, dataset, sortedAll]);
 
   const px = size === "lg" ? "px-5 py-3.5" : "px-3.5 py-2.5";
   const fs = size === "lg" ? "text-[15px]" : "text-[13px]";
 
   return (
     <div ref={ref} className="relative w-full">
-      <div
-        className={[
-          "glass pill flex items-center gap-2",
-          px,
-          "ring-1 ring-black/[0.03]",
-        ].join(" ")}
-      >
+      <div className={["glass pill flex items-center gap-2 ring-1 ring-black/[0.03]", px].join(" ")}>
         <Search className="h-4 w-4 shrink-0 text-ink-500" strokeWidth={2.4} />
         <input
           autoFocus={autoFocus}
@@ -61,10 +72,7 @@ export function MovieSearch({
             setOpen(true);
           }}
           placeholder={placeholder}
-          className={[
-            "w-full bg-transparent outline-none placeholder:text-ink-500",
-            fs,
-          ].join(" ")}
+          className={["w-full bg-transparent outline-none placeholder:text-ink-500", fs].join(" ")}
         />
         {value && (
           <button
@@ -82,7 +90,10 @@ export function MovieSearch({
 
       {open && (
         <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-40 max-h-[60vh] overflow-auto no-scrollbar rounded-3xl glass-strong p-1.5 animate-slide-up">
-          {results.length === 0 && (
+          {!dataset && (
+            <div className="px-4 py-3 text-[13px] text-ink-500">Loading dataset…</div>
+          )}
+          {dataset && results.length === 0 && (
             <div className="px-4 py-3 text-[13px] text-ink-500">No matches.</div>
           )}
           {results.map((m) => (
@@ -97,11 +108,16 @@ export function MovieSearch({
             >
               <Poster movie={m} className="h-10 w-7 shrink-0" />
               <div className="min-w-0 flex-1">
-                <div className="truncate text-[14px] font-medium text-ink-900">
-                  {m.title}
-                </div>
-                <div className="text-[11.5px] text-ink-500">
-                  {m.year} · {m.cast.length} cast
+                <div className="truncate text-[14px] font-medium text-ink-900">{m.title}</div>
+                <div className="flex items-center gap-1.5 text-[11.5px] text-ink-500">
+                  <span>{m.year}</span>
+                  <span className="opacity-40">·</span>
+                  <span className="flex items-center gap-0.5">
+                    <Star className="h-2.5 w-2.5 fill-amber-400 stroke-amber-500" />
+                    {m.rating.toFixed(1)}
+                  </span>
+                  <span className="opacity-40">·</span>
+                  <span>{m.cast.length} cast</span>
                 </div>
               </div>
             </button>
@@ -116,10 +132,10 @@ export function Poster({
   movie,
   className = "h-12 w-9",
 }: {
-  movie: { hue?: number; title: string };
+  movie: { id?: string; genres?: string; title: string };
   className?: string;
 }) {
-  const h = movie.hue ?? Math.floor((movie.title.charCodeAt(0) * 37) % 360);
+  const h = hueFor({ id: movie.id || "", title: movie.title, genres: movie.genres });
   const initials = movie.title
     .replace(/[^A-Za-z0-9 ]/g, "")
     .split(" ")

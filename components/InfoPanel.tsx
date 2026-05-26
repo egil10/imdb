@@ -1,35 +1,67 @@
 "use client";
 
-import { Calendar, Film, Users, X } from "lucide-react";
-import { ACTORS_NAMES, FILMOGRAPHY, MOVIES_BY_ID, type Movie } from "@/data/movies";
+import { Calendar, Film, Star, Tag, Users, X } from "lucide-react";
+import type { Dataset, Movie } from "@/lib/dataset";
 import { Poster } from "./MovieSearch";
 
+const MAX_OTHER_FILMS_PER_ACTOR_IN_PANEL = 6;
+
 export function InfoPanel({
+  dataset,
   movie,
   onPickMovie,
   onClose,
 }: {
+  dataset: Dataset;
   movie: Movie;
   onPickMovie: (id: string) => void;
   onClose?: () => void;
 }) {
-  const cast = movie.cast.map((id) => ({ id, name: ACTORS_NAMES[id] || id }));
+  const cast = movie.cast.map((id) => ({
+    id,
+    name: dataset.actorNamesById[id] || id,
+  }));
 
   return (
     <aside className="pointer-events-auto h-full w-full overflow-hidden rounded-[28px] glass-strong p-5 flex flex-col">
       <header className="flex items-start gap-4">
         <Poster movie={movie} className="h-20 w-14 shrink-0" />
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2 text-[11px] text-ink-500">
-            <Calendar className="h-3 w-3" />
-            {movie.year}
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-ink-500">
+            <span className="flex items-center gap-1">
+              <Calendar className="h-3 w-3" /> {movie.year}
+            </span>
             <span className="opacity-40">·</span>
-            <Users className="h-3 w-3" />
-            {movie.cast.length} cast
+            <span className="flex items-center gap-1">
+              <Star className="h-3 w-3 fill-amber-400 stroke-amber-500" />
+              {movie.rating.toFixed(1)}
+              <span className="text-ink-500/70">({formatVotes(movie.votes)})</span>
+            </span>
+            <span className="opacity-40">·</span>
+            <span className="flex items-center gap-1">
+              <Users className="h-3 w-3" /> {movie.cast.length}
+            </span>
           </div>
           <h2 className="mt-0.5 text-[20px] font-semibold leading-tight tracking-tight">
             {movie.title}
           </h2>
+          {movie.genres && (
+            <div className="mt-1.5 flex flex-wrap gap-1">
+              {movie.genres
+                .split(",")
+                .filter(Boolean)
+                .slice(0, 3)
+                .map((g) => (
+                  <span
+                    key={g}
+                    className="inline-flex items-center gap-1 rounded-full bg-white/70 px-2 py-0.5 text-[10.5px] text-ink-700 ring-1 ring-black/[0.05]"
+                  >
+                    <Tag className="h-2.5 w-2.5" />
+                    {g}
+                  </span>
+                ))}
+            </div>
+          )}
         </div>
         {onClose && (
           <button
@@ -46,17 +78,19 @@ export function InfoPanel({
         <SectionTitle icon={<Users className="h-3.5 w-3.5" />} text="Cast" />
         <div className="mt-1.5 grid gap-1">
           {cast.map((a) => {
-            const others = (FILMOGRAPHY[a.id] || []).filter((i) => i !== movie.id);
+            const others = (dataset.filmography[a.id] || []).filter((i) => i !== movie.id);
             return (
-              <div
-                key={a.id}
-                className="rounded-2xl bg-white/55 hairline px-3 py-2"
-              >
-                <div className="text-[13.5px] font-medium text-ink-900">{a.name}</div>
+              <div key={a.id} className="rounded-2xl bg-white/55 hairline px-3 py-2">
+                <div className="flex items-baseline justify-between gap-2">
+                  <div className="text-[13.5px] font-medium text-ink-900">{a.name}</div>
+                  <div className="text-[10.5px] text-ink-500">
+                    {others.length} other {others.length === 1 ? "film" : "films"}
+                  </div>
+                </div>
                 {others.length > 0 && (
                   <div className="mt-1 flex flex-wrap gap-1">
-                    {others.slice(0, 6).map((mid) => {
-                      const m = MOVIES_BY_ID[mid]!;
+                    {others.slice(0, MAX_OTHER_FILMS_PER_ACTOR_IN_PANEL).map((mid) => {
+                      const m = dataset.moviesById[mid]!;
                       return (
                         <button
                           key={mid}
@@ -64,15 +98,13 @@ export function InfoPanel({
                           className="rounded-full bg-white px-2 py-0.5 text-[11px] text-ink-700 ring-1 ring-black/[0.05] hover:bg-ink-900 hover:text-white transition"
                         >
                           {m.title}
-                          <span className="ml-1 text-ink-500 group-hover:text-white/70">
-                            {m.year}
-                          </span>
+                          <span className="ml-1 text-ink-500">{m.year}</span>
                         </button>
                       );
                     })}
-                    {others.length > 6 && (
+                    {others.length > MAX_OTHER_FILMS_PER_ACTOR_IN_PANEL && (
                       <span className="rounded-full bg-white/50 px-2 py-0.5 text-[11px] text-ink-500 ring-1 ring-black/[0.04]">
-                        +{others.length - 6} more
+                        +{others.length - MAX_OTHER_FILMS_PER_ACTOR_IN_PANEL} more
                       </span>
                     )}
                   </div>
@@ -99,4 +131,10 @@ function SectionTitle({ icon, text }: { icon: React.ReactNode; text: string }) {
       <span>{text}</span>
     </div>
   );
+}
+
+function formatVotes(v: number): string {
+  if (v >= 1_000_000) return (v / 1_000_000).toFixed(1).replace(/\.0$/, "") + "M";
+  if (v >= 1_000) return Math.round(v / 1_000) + "k";
+  return String(v);
 }

@@ -1,29 +1,40 @@
 "use client";
 
 import { ArrowRight, Dice5, Sparkles, Trophy } from "lucide-react";
-import { useMemo, useState } from "react";
-import { MOVIES_BY_ID, type Movie } from "@/data/movies";
-import { findPath, pickRandomMovie, type PathStep } from "@/lib/graph";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { Dataset, Movie } from "@/lib/dataset";
+import { pickRandomMovie } from "@/lib/dataset";
+import { findPath, type PathStep } from "@/lib/graph";
 import { MovieSearch, Poster } from "./MovieSearch";
 
 export function DegreesPanel({
+  dataset,
   onPath,
 }: {
+  dataset: Dataset;
   onPath: (steps: PathStep[] | null, from: Movie | null, to: Movie | null) => void;
 }) {
-  const [from, setFrom] = useState<Movie | null>(MOVIES_BY_ID["oppenheimer"] ?? null);
-  const [to, setTo] = useState<Movie | null>(MOVIES_BY_ID["pulp-fiction"] ?? null);
+  // Pick two well-known films as defaults (highest votes -> recognizable).
+  const defaults = useMemo(() => {
+    const sorted = [...dataset.movies].sort((a, b) => b.votes - a.votes);
+    return { from: sorted[0], to: sorted[5] };
+  }, [dataset]);
+
+  const [from, setFrom] = useState<Movie | null>(defaults.from);
+  const [to, setTo] = useState<Movie | null>(defaults.to);
 
   const steps = useMemo<PathStep[] | null>(() => {
     if (!from || !to) return null;
-    return findPath(from.id, to.id);
-  }, [from, to]);
+    return findPath(dataset, from.id, to.id);
+  }, [dataset, from, to]);
 
-  // bubble result up so the graph can highlight it
-  useMemo(() => {
+  // bubble result up so the graph can highlight it; use ref to avoid re-firing on identity-only changes
+  const lastSentRef = useRef<PathStep[] | null | undefined>(undefined);
+  useEffect(() => {
+    if (lastSentRef.current === steps) return;
+    lastSentRef.current = steps;
     onPath(steps, from, to);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [steps]);
+  }, [steps, from, to, onPath]);
 
   const movieHops = steps ? Math.max(0, Math.floor((steps.length - 1) / 2)) : 0;
 
@@ -35,20 +46,34 @@ export function DegreesPanel({
         </div>
         <div>
           <div className="text-[15px] font-semibold tracking-tight">Six Degrees</div>
-          <div className="text-[11px] text-ink-500">find the shortest cast-chain between two films</div>
+          <div className="text-[11px] text-ink-500">
+            shortest cast-chain between two films
+          </div>
         </div>
       </div>
 
       <div className="mt-4 grid gap-2">
         <Label text="From" />
-        <MovieSearch value={from} onChange={setFrom} placeholder="Starting film…" size="sm" />
+        <MovieSearch
+          dataset={dataset}
+          value={from}
+          onChange={setFrom}
+          placeholder="Starting film…"
+          size="sm"
+        />
         <Label text="To" />
-        <MovieSearch value={to} onChange={setTo} placeholder="Target film…" size="sm" />
+        <MovieSearch
+          dataset={dataset}
+          value={to}
+          onChange={setTo}
+          placeholder="Target film…"
+          size="sm"
+        />
         <div className="flex items-center gap-2 pt-1">
           <button
             onClick={() => {
-              const a = pickRandomMovie();
-              const b = pickRandomMovie(a.id);
+              const a = pickRandomMovie(dataset);
+              const b = pickRandomMovie(dataset, a.id);
               setFrom(a);
               setTo(b);
             }}
@@ -72,7 +97,7 @@ export function DegreesPanel({
       <div className="mt-4 flex-1 overflow-auto no-scrollbar -mx-1 px-1">
         {!steps && (
           <div className="rounded-2xl bg-white/55 hairline px-4 py-6 text-center text-[13px] text-ink-500">
-            No path found — these films don't share a chain in the curated dataset.
+            No path found — these films don't share a chain in this dataset.
           </div>
         )}
         {steps && (
@@ -96,7 +121,11 @@ export function DegreesPanel({
                   {s.type === "movie" ? (
                     <div className="flex min-w-0 flex-1 items-center gap-2">
                       <Poster
-                        movie={{ title: s.title, hue: MOVIES_BY_ID[s.id]?.hue }}
+                        movie={{
+                          id: s.id,
+                          title: s.title,
+                          genres: dataset.moviesById[s.id]?.genres,
+                        }}
                         className="h-9 w-6 shrink-0"
                       />
                       <div className="min-w-0">

@@ -1,12 +1,22 @@
 "use client";
 
-import { Clapperboard, Map, Sparkles, Github } from "lucide-react";
+import { Clapperboard, Map, Sparkles, Github, Film, Users } from "lucide-react";
 
 export type Mode = "map" | "degrees";
 
-export function Header({ mode, onModeChange }: { mode: Mode; onModeChange: (m: Mode) => void }) {
+export function Header({
+  mode,
+  onModeChange,
+  movieCount,
+  actorCount,
+}: {
+  mode: Mode;
+  onModeChange: (m: Mode) => void;
+  movieCount?: number;
+  actorCount?: number;
+}) {
   return (
-    <header className="fixed top-4 left-1/2 z-50 -translate-x-1/2 w-[min(96vw,860px)]">
+    <header className="fixed top-4 left-1/2 z-50 -translate-x-1/2 w-[min(96vw,920px)]">
       <div className="glass-strong pill flex items-center gap-2 px-2 py-2">
         <div className="flex items-center gap-2 pl-3 pr-2">
           <div className="relative grid h-8 w-8 place-items-center rounded-full bg-gradient-to-br from-violet-500 via-fuchsia-500 to-sky-500 text-white shadow-soft">
@@ -16,6 +26,11 @@ export function Header({ mode, onModeChange }: { mode: Mode; onModeChange: (m: M
             <div className="text-[15px] font-semibold tracking-tight">IMDB Map</div>
             <div className="text-[11px] text-ink-500">cinema as a network</div>
           </div>
+        </div>
+
+        <div className="hidden md:flex items-center gap-1 pl-1">
+          <Stat icon={<Film className="h-3 w-3" />} value={movieCount} label="films" />
+          <Stat icon={<Users className="h-3 w-3" />} value={actorCount} label="actors" />
         </div>
 
         <div className="ml-auto flex items-center gap-1 rounded-full bg-white/60 p-1 ring-1 ring-black/[0.04]">
@@ -47,6 +62,26 @@ export function Header({ mode, onModeChange }: { mode: Mode; onModeChange: (m: M
   );
 }
 
+function Stat({
+  icon,
+  value,
+  label,
+}: {
+  icon: React.ReactNode;
+  value?: number;
+  label: string;
+}) {
+  return (
+    <div className="flex items-center gap-1.5 rounded-full bg-white/55 px-2.5 py-1 text-[11.5px] text-ink-700 ring-1 ring-black/[0.04]">
+      <span className="text-ink-500">{icon}</span>
+      <span className="font-semibold tabular-nums">
+        {value != null ? value.toLocaleString() : "…"}
+      </span>
+      <span className="text-ink-500">{label}</span>
+    </div>
+  );
+}
+
 function PillButton({
   active,
   onClick,
@@ -63,9 +98,7 @@ function PillButton({
       onClick={onClick}
       className={[
         "flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[13px] font-medium transition",
-        active
-          ? "bg-ink-900 text-white shadow-soft"
-          : "text-ink-700 hover:bg-white/70",
+        active ? "bg-ink-900 text-white shadow-soft" : "text-ink-700 hover:bg-white/70",
       ].join(" ")}
     >
       {icon}
