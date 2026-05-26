@@ -30,24 +30,22 @@ type SolvableChallenge = {
 };
 
 function pickSolvableChallenge(d: Dataset, minHops = 2, maxHops = 4): SolvableChallenge {
-  // Try random pairs until we find one connected with at least minHops hops.
-  for (let i = 0; i < 60; i++) {
-    const a = pickRandomMovie(d);
-    const b = pickRandomMovie(d, a.id);
+  // Both endpoints are drawn from the largest connected component, so a path
+  // is guaranteed to exist. We retry only to land in the desired hop range —
+  // a "good" puzzle is 2–4 hops; outside that we keep trying for a bit.
+  let fallback: SolvableChallenge | null = null;
+  for (let i = 0; i < 40; i++) {
+    const a = pickRandomMovie(d, undefined, { mainOnly: true });
+    const b = pickRandomMovie(d, a.id, { mainOnly: true });
     const path = findPath(d, a.id, b.id);
-    if (!path) continue;
+    if (!path) continue; // shouldn't happen given mainOnly, but safe
     const hops = Math.max(0, Math.floor((path.length - 1) / 2));
     if (hops >= minHops && hops <= maxHops) return { from: a, to: b, optimal: path };
+    if (!fallback) fallback = { from: a, to: b, optimal: path };
   }
-  // Fallback: any connected pair
-  for (let i = 0; i < 100; i++) {
-    const a = pickRandomMovie(d);
-    const b = pickRandomMovie(d, a.id);
-    const path = findPath(d, a.id, b.id);
-    if (path) return { from: a, to: b, optimal: path };
-  }
-  // Hard fallback: same movie
-  const a = pickRandomMovie(d);
+  if (fallback) return fallback;
+  // Hard fallback: same movie (cannot actually be reached given main-component picking)
+  const a = pickRandomMovie(d, undefined, { mainOnly: true });
   return { from: a, to: a, optimal: [{ type: "movie", id: a.id, title: a.title, year: a.year }] };
 }
 

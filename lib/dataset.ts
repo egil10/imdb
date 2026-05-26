@@ -20,6 +20,11 @@ export type Dataset = {
   moviesById: Record<string, Movie>;
   actorNamesById: Record<string, string>;
   filmography: Record<string, string[]>; // actor id -> movie ids, sorted by votes desc
+  // Largest connected component of the bipartite movie-actor graph.
+  // ~95.7% of all movies live here; the rest are foreign-cinema islands.
+  mainComponent: Set<string>; // movie ids in the giant component
+  // List form for cheap random sampling.
+  mainComponentMovies: Movie[];
 };
 
 let cache: Dataset | null = null;
@@ -86,7 +91,20 @@ async function fetchDataset(): Promise<Dataset> {
       filmography[aid].sort((a, b) => moviesById[b].votes - moviesById[a].votes);
     }
 
-    cache = { movies: raw.movies, actors: raw.actors, moviesById, actorNamesById, filmography };
+    const { mainComponent, mainComponentMovies } = computeMainComponent(
+      raw.movies,
+      filmography,
+    );
+
+    cache = {
+      movies: raw.movies,
+      actors: raw.actors,
+      moviesById,
+      actorNamesById,
+      filmography,
+      mainComponent,
+      mainComponentMovies,
+    };
     return cache;
   })();
   return inflight;
@@ -110,10 +128,66 @@ export function useDataset(): Dataset | null {
   return d;
 }
 
-export function pickRandomMovie(d: Dataset, exclude?: string): Movie {
+export function pickRandomMovie(
+  d: Dataset,
+  exclude?: string,
+  opts?: { mainOnly?: boolean },
+): Movie {
+  const pool = opts?.mainOnly ? d.mainComponentMovies : d.movies;
   let m: Movie;
   do {
-    m = d.movies[Math.floor(Math.random() * d.movies.length)];
+    m = pool[Math.floor(Math.random() * pool.length)];
   } while (exclude && m.id === exclude);
   return m;
+}
+
+// One BFS over the bipartite graph to find the largest connected component.
+// Runs once at dataset load (~80k nodes, completes in milliseconds).
+function computeMainComponent(
+  movies: Movie[],
+  filmography: Record<string, string[]>,
+): { mainComponent: Set<string>; mainComponentMovies: Movie[] } {
+  /** @type {Map<string, string[]>} */
+  const adj: Record<string, string[]> = Object.create(null);
+  for (const m of movies) {
+    const mid = "m:" + m.id;
+    (adj[mid] ||= []);
+    for (const a of m.cast) {
+      const aid = "a:" + a;
+      (adj[mid] ||= []).push(aid);
+      (adj[aid] ||= []).push(mid);
+    }
+  }
+
+  const seen = new Set<string>();
+  let best: { ids: Set<string>; size: number } | null = null;
+
+  for (const start in adj) {
+    if (seen.has(start)) continue;
+    const ids = new Set<string>();
+    const queue: string[] = [start];
+    seen.add(start);
+    while (queue.length) {
+      const n = queue.shift()!;
+      ids.add(n);
+      const nb = adj[n];
+      if (!nb) continue;
+      for (const x of nb) {
+        if (!seen.has(x)) {
+          seen.add(x);
+          queue.push(x);
+        }
+      }
+    }
+    if (!best || ids.size > best.size) best = { ids, size: ids.size };
+  }
+
+  const mainComponent = new Set<string>();
+  if (best) {
+    for (const nid of best.ids) {
+      if (nid.startsWith("m:")) mainComponent.add(nid.slice(2));
+    }
+  }
+  const mainComponentMovies = movies.filter((m) => mainComponent.has(m.id));
+  return { mainComponent, mainComponentMovies };
 }
