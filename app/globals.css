@@ -1,0 +1,80 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg-from: #f3f5fb;
+  --bg-via: #f7e9ff;
+  --bg-to: #e6f1ff;
+  --ink: #0c0d10;
+  --ink-soft: #6b6b76;
+  --line: rgba(15, 15, 20, 0.06);
+}
+
+html,
+body {
+  height: 100%;
+  background: var(--bg-from);
+  color: var(--ink);
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text",
+    Inter, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  background-image:
+    radial-gradient(1100px 700px at 8% -10%, rgba(180, 200, 255, 0.55) 0%, transparent 60%),
+    radial-gradient(900px 650px at 110% 0%, rgba(255, 200, 230, 0.5) 0%, transparent 55%),
+    radial-gradient(1200px 900px at 50% 120%, rgba(190, 235, 255, 0.55) 0%, transparent 60%),
+    linear-gradient(180deg, #f6f8fc 0%, #f1f3fa 100%);
+  background-attachment: fixed;
+}
+
+.glass {
+  background: rgba(255, 255, 255, 0.62);
+  -webkit-backdrop-filter: saturate(180%) blur(22px);
+  backdrop-filter: saturate(180%) blur(22px);
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  box-shadow:
+    0 1px 0 0 rgba(255, 255, 255, 0.9) inset,
+    0 1px 2px rgba(15, 15, 20, 0.04),
+    0 14px 36px -14px rgba(15, 15, 20, 0.14);
+}
+
+.glass-strong {
+  background: rgba(255, 255, 255, 0.78);
+  -webkit-backdrop-filter: saturate(200%) blur(28px);
+  backdrop-filter: saturate(200%) blur(28px);
+  border: 1px solid rgba(255, 255, 255, 0.85);
+  box-shadow:
+    0 1px 0 0 rgba(255, 255, 255, 0.95) inset,
+    0 2px 6px rgba(15, 15, 20, 0.05),
+    0 20px 48px -16px rgba(15, 15, 20, 0.18);
+}
+
+.pill {
+  border-radius: 9999px;
+}
+
+.hairline {
+  border: 1px solid var(--line);
+}
+
+button {
+  -webkit-tap-highlight-color: transparent;
+}
+
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { scrollbar-width: none; }
+
+/* subtle dotted background for graph canvas */
+.dot-grid {
+  background-image: radial-gradient(rgba(15,15,20,0.06) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+
+/* gradient poster placeholder */
+.poster {
+  background: linear-gradient(135deg, hsl(var(--h) 80% 70%) 0%, hsl(calc(var(--h) + 40) 80% 60%) 100%);
+}
