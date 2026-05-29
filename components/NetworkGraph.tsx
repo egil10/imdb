@@ -274,7 +274,7 @@ export function NetworkGraph({
           // Font is a constant on-screen size so text stays legible at any zoom.
           const depth = depthFromFocal.get(node.id);
           const d = depth == null ? 99 : depth;
-          const reveal = d === 0 ? 0 : labelThreshold * (0.75 + (d - 1) * 1.15);
+          const reveal = d === 0 ? 0 : labelThreshold * (0.6 + (d - 1) * 2.4);
           const show =
             isFocal ||
             isTarget ||
