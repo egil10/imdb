@@ -68,15 +68,39 @@ export function NetworkGraph({
     return m;
   }, [data]);
 
-  // Show labels much earlier than before. Small graphs label almost
-  // immediately; only very dense ones hold back until you zoom in a touch, so
-  // the canvas never turns into a wall of overlapping text.
+  // Base zoom at which labels start appearing. Small graphs label almost
+  // immediately; only very dense ones hold back a touch, so the canvas never
+  // turns into a wall of overlapping text.
   const labelThreshold = useMemo(() => {
     const n = data.nodes.length;
-    if (n > 280) return 0.95;
-    if (n > 120) return 0.6;
+    if (n > 280) return 0.9;
+    if (n > 120) return 0.55;
     return 0.28;
   }, [data.nodes.length]);
+
+  // Distance (in hops) of every node from the focal node, via BFS. Labels are
+  // revealed level by level as you zoom in: focal (0) is always named, then its
+  // direct neighbours — the cast (1) — then their films (2), and so on.
+  const depthFromFocal = useMemo(() => {
+    const m = new Map<string, number>();
+    if (!focalId) return m;
+    m.set(focalId, 0);
+    const q = [focalId];
+    let head = 0;
+    while (head < q.length) {
+      const cur = q[head++];
+      const dc = m.get(cur)!;
+      const nbs = neighbors.get(cur);
+      if (!nbs) continue;
+      for (const nb of nbs) {
+        if (!m.has(nb)) {
+          m.set(nb, dc + 1);
+          q.push(nb);
+        }
+      }
+    }
+    return m;
+  }, [neighbors, focalId]);
 
   // Tune the underlying d3-force layout to give nodes more breathing room.
   // Re-applied whenever the graph data changes (force-graph rebuilds its
@@ -244,12 +268,13 @@ export function NetworkGraph({
             ctx.stroke();
           }
 
-          // Labels reveal gradually by importance: the focal node is always
-          // named, then bigger nodes surface first and smaller ones only as you
-          // keep zooming in — so the hierarchy reads outward from the centre
-          // (focal → biggest → next level → …) instead of all at once. Font is
-          // kept at a constant on-screen size so text stays legible at any zoom.
-          const reveal = labelThreshold * (1.65 - w); // bigger w → earlier
+          // Labels reveal step by step, outward from the centre: the focal node
+          // (depth 0) is always named, the cast (depth 1) appears as you start
+          // zooming, then their films (depth 2), and so on — never all at once.
+          // Font is a constant on-screen size so text stays legible at any zoom.
+          const depth = depthFromFocal.get(node.id);
+          const d = depth == null ? 99 : depth;
+          const reveal = d === 0 ? 0 : labelThreshold * (0.75 + (d - 1) * 1.15);
           const show =
             isFocal ||
             isTarget ||
