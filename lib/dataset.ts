@@ -27,6 +27,9 @@ export type Dataset = {
   // List forms for cheap random sampling.
   mainComponentMovies: Movie[];
   mainComponentActorList: Actor[];
+  // Recognizable actors (have starred in a high-vote film) — used to pick
+  // gettable Six Degrees endpoints.
+  notableActorList: Actor[];
 };
 
 let cache: Dataset | null = null;
@@ -86,6 +89,10 @@ export function colorForHue(hue: number): string {
   return `hsl(${hue} 65% 58%)`;
 }
 
+// IMDb deep links — ids are IMDb tconst/nconst, so the URLs are deterministic.
+export const imdbTitleUrl = (id: string) => `https://www.imdb.com/title/${id}/`;
+export const imdbNameUrl = (id: string) => `https://www.imdb.com/name/${id}/`;
+
 export function hueFor(movie: { id: string; genres?: string; title: string }): number {
   if (movie.genres) {
     const g = movie.genres.split(",")[0].toLowerCase();
@@ -101,6 +108,15 @@ async function fetchDataset(): Promise<Dataset> {
     const res = await fetch("/imdb.json", { cache: "force-cache" });
     if (!res.ok) throw new Error(`Failed to load dataset: ${res.status}`);
     const raw = (await res.json()) as { movies: Movie[]; actors: Actor[] };
+
+    // Some IMDb principals rows list the same person twice in one title's cast.
+    // Collapse them so an actor never appears twice on a film — otherwise their
+    // filmography gets duplicate entries that spawn duplicate / stray nodes.
+    for (const m of raw.movies) {
+      if (m.cast.length > 1 && new Set(m.cast).size !== m.cast.length) {
+        m.cast = Array.from(new Set(m.cast));
+      }
+    }
 
     const moviesById: Record<string, Movie> = Object.create(null);
     for (const m of raw.movies) moviesById[m.id] = m;
@@ -125,6 +141,13 @@ async function fetchDataset(): Promise<Dataset> {
     const mainComponentActorList = raw.actors.filter((a) =>
       mainComponentActors.has(a.id),
     );
+    // "Notable" = in the main component and headlining at least one film with
+    // ≥ 100k votes (filmography is sorted by votes desc, so check the top one).
+    const NOTABLE_TOP_VOTES = 100_000;
+    const notableActorList = mainComponentActorList.filter((a) => {
+      const top = filmography[a.id]?.[0];
+      return top != null && moviesById[top].votes >= NOTABLE_TOP_VOTES;
+    });
 
     cache = {
       movies: raw.movies,
@@ -136,6 +159,7 @@ async function fetchDataset(): Promise<Dataset> {
       mainComponentActors,
       mainComponentMovies,
       mainComponentActorList,
+      notableActorList,
     };
     return cache;
   })();

@@ -1,8 +1,9 @@
 "use client";
 
-import { Film, Star, UserRound, Users } from "lucide-react";
+import { ExternalLink, Film, Star, UserRound, Users } from "lucide-react";
 import { useMemo } from "react";
 import type { Dataset } from "@/lib/dataset";
+import { imdbNameUrl, imdbTitleUrl } from "@/lib/dataset";
 import { Poster } from "./MovieSearch";
 
 // The actor-centric counterpart to InfoPanel: who they are, every film they're
@@ -82,10 +83,21 @@ export function ActorPanel({
               </>
             )}
           </div>
-          <h2 className="mt-0.5 flex items-center gap-1.5 text-[20px] font-semibold leading-tight tracking-tight">
-            <UserRound className="h-4 w-4 text-amber-500" />
-            {name}
-          </h2>
+          <div className="mt-0.5 flex items-start gap-1.5">
+            <h2 className="flex items-center gap-1.5 text-[20px] font-semibold leading-tight tracking-tight">
+              <UserRound className="h-4 w-4 text-amber-500" />
+              {name}
+            </h2>
+            <a
+              href={imdbNameUrl(actorId)}
+              target="_blank"
+              rel="noreferrer"
+              title={`${name} on IMDb`}
+              className="mt-1 inline-flex shrink-0 items-center gap-0.5 rounded-full bg-amber-400/90 px-1.5 py-0.5 text-[9px] font-bold text-ink-900 ring-1 ring-black/[0.06] transition hover:bg-amber-400"
+            >
+              IMDb <ExternalLink className="h-2.5 w-2.5" />
+            </a>
+          </div>
           {topGenres.length > 0 && (
             <div className="mt-1.5 flex flex-wrap gap-1">
               {topGenres.map((g) => (
@@ -131,24 +143,37 @@ export function ActorPanel({
             const m = dataset.moviesById[mid];
             if (!m) return null;
             return (
-              <button
+              <div
                 key={mid}
-                onClick={() => onPickMovie(mid)}
-                className="group flex items-center gap-2 rounded-xl bg-white/70 px-3 py-2 text-left ring-1 ring-black/[0.04] transition hover:bg-ink-900 hover:text-white"
+                className="group flex items-center gap-2 rounded-xl bg-white/70 px-3 py-2 ring-1 ring-black/[0.04] transition hover:bg-ink-900"
               >
-                <Poster movie={m} className="h-9 w-6 shrink-0" />
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-[13px] font-semibold leading-tight">
-                    {m.title}
+                <button
+                  onClick={() => onPickMovie(mid)}
+                  className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                >
+                  <Poster movie={m} className="h-9 w-6 shrink-0" />
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-[13px] font-semibold leading-tight group-hover:text-white">
+                      {m.title}
+                    </div>
+                    <div className="flex items-center gap-1 text-[10.5px] text-ink-500 group-hover:text-white/70">
+                      <span>{m.year}</span>
+                      <span className="opacity-40">·</span>
+                      <Star className="h-2.5 w-2.5 fill-amber-400 stroke-amber-500" />
+                      {m.rating.toFixed(1)}
+                    </div>
                   </div>
-                  <div className="flex items-center gap-1 text-[10.5px] text-ink-500 group-hover:text-white/70">
-                    <span>{m.year}</span>
-                    <span className="opacity-40">·</span>
-                    <Star className="h-2.5 w-2.5 fill-amber-400 stroke-amber-500" />
-                    {m.rating.toFixed(1)}
-                  </div>
-                </div>
-              </button>
+                </button>
+                <a
+                  href={imdbTitleUrl(mid)}
+                  target="_blank"
+                  rel="noreferrer"
+                  title={`${m.title} on IMDb`}
+                  className="shrink-0 text-ink-500/60 transition hover:text-amber-500 group-hover:text-white/80"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" />
+                </a>
+              </div>
             );
           })}
         </div>

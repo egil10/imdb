@@ -173,7 +173,10 @@ export function buildActorGraph(d: Dataset, actorId: string): GraphData {
     weight: weightForActorFilms(films.length),
   });
 
+  const seen = new Set<string>();
   for (const mid of films) {
+    if (seen.has(mid)) continue; // guard against any duplicate filmography entry
+    seen.add(mid);
     const m = d.moviesById[mid];
     if (!m) continue;
     nodes.push({
@@ -339,25 +342,159 @@ export function findActorPath(
   });
 }
 
-// Pick two actors from the giant component (so a path is guaranteed) whose
-// shortest connection lands in a fun 2–4 film range, retrying for a bit.
+// Pick two *recognizable* actors (so the puzzle is gettable) whose shortest
+// connection lands in the requested film range, retrying for a bit.
 export function pickSolvableActorChallenge(
   d: Dataset,
   minHops = 2,
-  maxHops = 4,
+  maxHops = 3,
 ): ActorChallenge {
+  const pool =
+    d.notableActorList.length > 50 ? d.notableActorList : d.mainComponentActorList;
+  const sample = (exclude?: string): Actor => {
+    let a: Actor;
+    let guard = 0;
+    do {
+      a = pool[Math.floor(Math.random() * pool.length)];
+    } while (exclude && a.id === exclude && guard++ < 60);
+    return a;
+  };
+
   let fallback: ActorChallenge | null = null;
-  for (let i = 0; i < 40; i++) {
-    const a = pickRandomActor(d);
-    const b = pickRandomActor(d, a.id);
+  for (let i = 0; i < 80; i++) {
+    const a = sample();
+    const b = sample(a.id);
     const path = findActorPath(d, a.id, b.id);
     if (!path) continue;
     const hops = hopsOf(path);
     if (hops >= minHops && hops <= maxHops) return { from: a, to: b, optimal: path };
-    if (!fallback && hops > 0) fallback = { from: a, to: b, optimal: path };
+    if ((!fallback || hopsOf(fallback.optimal) > hops) && hops >= 2) {
+      fallback = { from: a, to: b, optimal: path };
+    }
   }
   if (fallback) return fallback;
-  const a = pickRandomActor(d);
-  const b = pickRandomActor(d, a.id);
+  const a = sample();
+  const b = sample(a.id);
   return { from: a, to: b, optimal: findActorPath(d, a.id, b.id) ?? [] };
+}
+
+// ── Game board ──────────────────────────────────────────────────────────────
+// In game mode the canvas shows only the current trail tip and its *legal next
+// moves*, so every non-focal node is something you can click to advance.
+
+// Valid next moves from a tip: an actor's films, or a film's co-stars — minus
+// anything already in the trail. Films are pre-sorted by votes; cast keeps its
+// billing order.
+export function gameOptions(
+  d: Dataset,
+  tip: Focus,
+  visited: Set<string>,
+): Focus[] {
+  if (tip.kind === "actor") {
+    const seen = new Set<string>();
+    const out: Focus[] = [];
+    for (const mid of d.filmography[tip.id] || []) {
+      if (seen.has(mid) || visited.has(`movie:${mid}`)) continue;
+      seen.add(mid);
+      out.push({ kind: "movie", id: mid });
+    }
+    return out;
+  }
+  const m = d.moviesById[tip.id];
+  if (!m) return [];
+  return m.cast
+    .filter((aid) => !visited.has(`actor:${aid}`))
+    .map((aid): Focus => ({ kind: "actor", id: aid }));
+}
+
+export function buildGameGraph(
+  d: Dataset,
+  tip: Focus,
+  visited: Set<string>,
+): GraphData {
+  const nodes: GraphNode[] = [];
+  const links: GraphLink[] = [];
+  const tipNodeId = `${tip.kind}:${tip.id}`;
+
+  if (tip.kind === "actor") {
+    nodes.push({
+      id: tipNodeId,
+      type: "actor",
+      label: d.actorNamesById[tip.id] || tip.id,
+      weight: weightForActorFilms((d.filmography[tip.id] || []).length),
+    });
+  } else {
+    const m = d.moviesById[tip.id];
+    if (!m) return { nodes: [], links: [] };
+    nodes.push({
+      id: tipNodeId,
+      type: "movie",
+      label: m.title,
+      year: m.year,
+      hue: hueFor(m),
+      weight: weightForVotes(m.votes),
+    });
+  }
+
+  for (const opt of gameOptions(d, tip, visited)) {
+    const id = `${opt.kind}:${opt.id}`;
+    if (opt.kind === "movie") {
+      const m = d.moviesById[opt.id];
+      if (!m) continue;
+      nodes.push({
+        id,
+        type: "movie",
+        label: m.title,
+        year: m.year,
+        hue: hueFor(m),
+        weight: weightForVotes(m.votes),
+      });
+    } else {
+      nodes.push({
+        id,
+        type: "actor",
+        label: d.actorNamesById[opt.id] || opt.id,
+        weight: weightForActorFilms((d.filmography[opt.id] || []).length),
+      });
+    }
+    links.push({ source: tipNodeId, target: id });
+  }
+  return { nodes, links };
+}
+
+// BFS edge-distances from an actor over the bipartite graph; keys are
+// "a:<id>" / "m:<id>". Powers the live "best from here" hint + remaining count.
+export function bfsDistancesFromActor(
+  d: Dataset,
+  actorId: string,
+): Map<string, number> {
+  const dist = new Map<string, number>();
+  const start = `a:${actorId}`;
+  dist.set(start, 0);
+  const q = [start];
+  let head = 0;
+  while (head < q.length) {
+    const node = q[head++];
+    const dd = dist.get(node)!;
+    if (node.startsWith("a:")) {
+      for (const mid of d.filmography[node.slice(2)] || []) {
+        const nx = `m:${mid}`;
+        if (!dist.has(nx)) {
+          dist.set(nx, dd + 1);
+          q.push(nx);
+        }
+      }
+    } else {
+      const m = d.moviesById[node.slice(2)];
+      if (!m) continue;
+      for (const aid of m.cast) {
+        const nx = `a:${aid}`;
+        if (!dist.has(nx)) {
+          dist.set(nx, dd + 1);
+          q.push(nx);
+        }
+      }
+    }
+  }
+  return dist;
 }

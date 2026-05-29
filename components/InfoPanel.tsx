@@ -1,8 +1,18 @@
 "use client";
 
-import { Calendar, ChevronDown, Film, Star, Tag, Users, X } from "lucide-react";
+import {
+  Calendar,
+  ChevronDown,
+  ExternalLink,
+  Film,
+  Star,
+  Tag,
+  Users,
+  X,
+} from "lucide-react";
 import { useState } from "react";
 import type { Dataset, Movie } from "@/lib/dataset";
+import { imdbNameUrl, imdbTitleUrl } from "@/lib/dataset";
 import { Poster } from "./MovieSearch";
 
 const COLLAPSED_FILMS_PER_ACTOR = 8;
@@ -45,9 +55,20 @@ export function InfoPanel({
               <Users className="h-3 w-3" /> {movie.cast.length}
             </span>
           </div>
-          <h2 className="mt-0.5 text-[20px] font-semibold leading-tight tracking-tight">
-            {movie.title}
-          </h2>
+          <div className="mt-0.5 flex items-start gap-1.5">
+            <h2 className="text-[20px] font-semibold leading-tight tracking-tight">
+              {movie.title}
+            </h2>
+            <a
+              href={imdbTitleUrl(movie.id)}
+              target="_blank"
+              rel="noreferrer"
+              title="View on IMDb"
+              className="mt-1 inline-flex shrink-0 items-center gap-0.5 rounded-full bg-amber-400/90 px-1.5 py-0.5 text-[9px] font-bold text-ink-900 ring-1 ring-black/[0.06] transition hover:bg-amber-400"
+            >
+              IMDb <ExternalLink className="h-2.5 w-2.5" />
+            </a>
+          </div>
           {movie.genres && (
             <div className="mt-1.5 flex flex-wrap gap-1">
               {movie.genres
@@ -128,7 +149,7 @@ function CastRow({
 
   return (
     <div className="rounded-2xl bg-white/55 hairline px-3 py-2">
-      <div className="flex items-baseline justify-between gap-2">
+      <div className="flex items-baseline gap-1.5">
         <button
           onClick={() => onPickActor?.(actorId)}
           disabled={!onPickActor}
@@ -137,7 +158,16 @@ function CastRow({
         >
           {actorName}
         </button>
-        <div className="text-[10.5px] text-ink-500">
+        <a
+          href={imdbNameUrl(actorId)}
+          target="_blank"
+          rel="noreferrer"
+          title={`${actorName} on IMDb`}
+          className="text-ink-500/60 transition hover:text-amber-600"
+        >
+          <ExternalLink className="h-3 w-3" />
+        </a>
+        <div className="ml-auto text-[10.5px] text-ink-500">
           {films.length} other {films.length === 1 ? "film" : "films"}
         </div>
       </div>

@@ -43,13 +43,18 @@ export function NetworkGraph({
   }, []);
 
   // memoize graph data so the force layout doesn't re-init constantly.
-  const gdata = useMemo(
-    () => ({
-      nodes: data.nodes.map((n) => ({ ...n })),
-      links: data.links.map((l) => ({ ...l })),
-    }),
-    [data],
-  );
+  // De-dupe nodes by id defensively — a duplicate id confuses the force sim and
+  // shows up as a stray node floating off on its own.
+  const gdata = useMemo(() => {
+    const seen = new Set<string>();
+    const nodes: GraphNode[] = [];
+    for (const n of data.nodes) {
+      if (seen.has(n.id)) continue;
+      seen.add(n.id);
+      nodes.push({ ...n });
+    }
+    return { nodes, links: data.links.map((l) => ({ ...l })) };
+  }, [data]);
 
   // Adjacency built from the original (string) links — used to highlight a
   // node's immediate connections on hover. force-graph mutates link endpoints
@@ -108,24 +113,25 @@ export function NetworkGraph({
   useEffect(() => {
     const fg = fgRef.current;
     if (!fg) return;
-    // The focal node repels much harder so it carves out a clear hub of empty
-    // space around itself — making it obvious what the graph is centered on.
+    // The focal node repels a bit harder so it carves out a clear hub of space
+    // — but not so hard that weakly-tied leaves get flung far off. distanceMax
+    // keeps repulsion local so the whole graph stays compact.
     fg.d3Force("charge")
-      ?.strength((n: any) => (n.id === focalId ? -900 : -260))
-      .distanceMax(520);
+      ?.strength((n: any) => (n.id === focalId ? -520 : -230))
+      .distanceMax(340);
     fg.d3Force("link")?.distance((l: any) => {
       const sid = typeof l.source === "object" ? l.source.id : l.source;
       const tid = typeof l.target === "object" ? l.target.id : l.target;
-      // push the focal node's own spokes out furthest for breathing room
-      if (sid === focalId || tid === focalId) return 150;
+      // give the focal node's own spokes a little more room
+      if (sid === focalId || tid === focalId) return 110;
       const sIsActor =
         typeof l.source === "object" ? l.source.type === "actor" : false;
       const tIsActor =
         typeof l.target === "object" ? l.target.type === "actor" : false;
       // actor ↔ other-movie spokes pushed further out than focal ↔ actor edges
-      return sIsActor && tIsActor ? 90 : 70;
+      return sIsActor && tIsActor ? 84 : 64;
     });
-    fg.d3Force("center")?.strength(0.06);
+    fg.d3Force("center")?.strength(0.08);
     fg.d3ReheatSimulation?.();
   }, [gdata, focalId]);
 
