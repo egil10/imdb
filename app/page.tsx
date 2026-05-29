@@ -21,7 +21,7 @@ import { ActorPanel } from "@/components/ActorPanel";
 import { BaconGame } from "@/components/BaconGame";
 import { GameTrail } from "@/components/GameTrail";
 import { MapLegend } from "@/components/MapLegend";
-import { Loader2, Wand2 } from "lucide-react";
+import { Film, Loader2, UserRound, Wand2 } from "lucide-react";
 
 type TrailItem = { kind: "movie"; id: string } | { kind: "actor"; id: string };
 type GameState = {
@@ -123,6 +123,25 @@ export default function Home() {
     return `actor:${game.challenge.to.id}`;
   }, [mode, game]);
 
+  // Name of the central node, shown as a heading over the map (map mode).
+  const central = useMemo(() => {
+    if (mode !== "map" || !dataset || !focus) return null;
+    if (focus.kind === "movie") {
+      const m = dataset.moviesById[focus.id];
+      return m
+        ? { kind: "movie" as const, title: m.title, sub: String(m.year) }
+        : null;
+    }
+    const name = dataset.actorNamesById[focus.id];
+    return name
+      ? {
+          kind: "actor" as const,
+          title: name,
+          sub: `${(dataset.filmography[focus.id] || []).length} films`,
+        }
+      : null;
+  }, [mode, dataset, focus]);
+
   return (
     <main className="relative min-h-screen">
       {/* Floating left dock — replaces the old top header + side panel. */}
@@ -216,6 +235,23 @@ export default function Home() {
           }}
         />
       </section>
+
+      {/* Central node title (map mode) — top center over the canvas */}
+      {central && (
+        <div className="pointer-events-none fixed left-1/2 top-4 z-20 -translate-x-1/2">
+          <div className="glass pill flex items-center gap-2 px-4 py-2 animate-fade-in">
+            {central.kind === "movie" ? (
+              <Film className="h-4 w-4 text-violet-600" />
+            ) : (
+              <UserRound className="h-4 w-4 text-amber-500" />
+            )}
+            <span className="text-[15px] font-semibold tracking-tight text-ink-900">
+              {central.title}
+            </span>
+            <span className="text-[12px] text-ink-500">{central.sub}</span>
+          </div>
+        </div>
+      )}
 
       {/* Floating trail (game mode) — top center over the canvas */}
       {mode === "degrees" && game && dataset && (

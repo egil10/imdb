@@ -108,8 +108,16 @@ export function NetworkGraph({
   useEffect(() => {
     const fg = fgRef.current;
     if (!fg) return;
-    fg.d3Force("charge")?.strength(-260).distanceMax(420);
+    // The focal node repels much harder so it carves out a clear hub of empty
+    // space around itself — making it obvious what the graph is centered on.
+    fg.d3Force("charge")
+      ?.strength((n: any) => (n.id === focalId ? -900 : -260))
+      .distanceMax(520);
     fg.d3Force("link")?.distance((l: any) => {
+      const sid = typeof l.source === "object" ? l.source.id : l.source;
+      const tid = typeof l.target === "object" ? l.target.id : l.target;
+      // push the focal node's own spokes out furthest for breathing room
+      if (sid === focalId || tid === focalId) return 150;
       const sIsActor =
         typeof l.source === "object" ? l.source.type === "actor" : false;
       const tIsActor =
@@ -118,7 +126,8 @@ export function NetworkGraph({
       return sIsActor && tIsActor ? 90 : 70;
     });
     fg.d3Force("center")?.strength(0.06);
-  }, [gdata]);
+    fg.d3ReheatSimulation?.();
+  }, [gdata, focalId]);
 
   // re-zoom whenever focal changes
   useEffect(() => {
@@ -184,7 +193,7 @@ export function NetworkGraph({
           // Focal node is always bumped so it dominates visually.
           const w = typeof node.weight === "number" ? node.weight : 0.4;
           let r: number;
-          if (isFocal) r = 14;
+          if (isFocal) r = 19;
           else if (isActor) r = 3 + w * 4.5;
           else r = 3.5 + w * 7.5;
           if (isHover) r += 1.5;
@@ -282,7 +291,7 @@ export function NetworkGraph({
             isHighlighted ||
             (hoverId ? isNeighbor : globalScale > reveal);
           if (show && !dimmed) {
-            const screenPx = isFocal ? 15 : isActor ? 12.5 : 11.5;
+            const screenPx = isFocal ? 18 : isActor ? 12.5 : 11.5;
             const fontSize = screenPx / globalScale;
             ctx.font = `${isFocal || isActor ? 600 : 500} ${fontSize}px -apple-system, "SF Pro Text", Inter, sans-serif`;
             ctx.textAlign = "center";
