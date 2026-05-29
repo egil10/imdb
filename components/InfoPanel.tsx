@@ -11,11 +11,13 @@ export function InfoPanel({
   dataset,
   movie,
   onPickMovie,
+  onPickActor,
   onClose,
 }: {
   dataset: Dataset;
   movie: Movie;
   onPickMovie: (id: string) => void;
+  onPickActor?: (id: string) => void;
   onClose?: () => void;
 }) {
   const cast = movie.cast.map((id) => ({
@@ -81,10 +83,13 @@ export function InfoPanel({
           {cast.map((a) => (
             <CastRow
               key={a.id}
+              actorId={a.id}
               actorName={a.name}
+              totalFilms={(dataset.filmography[a.id] || []).length}
               films={(dataset.filmography[a.id] || []).filter((i) => i !== movie.id)}
               dataset={dataset}
               onPickMovie={onPickMovie}
+              onPickActor={onPickActor}
             />
           ))}
         </div>
@@ -92,7 +97,7 @@ export function InfoPanel({
 
       <footer className="mt-3 flex items-center justify-between rounded-2xl bg-white/55 hairline px-3 py-2 text-[11.5px] text-ink-500">
         <span className="flex items-center gap-1.5">
-          <Film className="h-3.5 w-3.5" /> Click any film to recenter
+          <Film className="h-3.5 w-3.5" /> Click a film to recenter, an actor for their career
         </span>
       </footer>
     </aside>
@@ -100,15 +105,21 @@ export function InfoPanel({
 }
 
 function CastRow({
+  actorId,
   actorName,
+  totalFilms,
   films,
   dataset,
   onPickMovie,
+  onPickActor,
 }: {
+  actorId: string;
   actorName: string;
+  totalFilms: number;
   films: string[];
   dataset: Dataset;
   onPickMovie: (id: string) => void;
+  onPickActor?: (id: string) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const cap = expanded ? films.length : COLLAPSED_FILMS_PER_ACTOR;
@@ -118,7 +129,14 @@ function CastRow({
   return (
     <div className="rounded-2xl bg-white/55 hairline px-3 py-2">
       <div className="flex items-baseline justify-between gap-2">
-        <div className="text-[13.5px] font-medium text-ink-900">{actorName}</div>
+        <button
+          onClick={() => onPickActor?.(actorId)}
+          disabled={!onPickActor}
+          className="text-left text-[13.5px] font-medium text-ink-900 hover:text-violet-700 disabled:hover:text-ink-900 transition"
+          title={onPickActor ? `See all ${totalFilms} films with ${actorName}` : undefined}
+        >
+          {actorName}
+        </button>
         <div className="text-[10.5px] text-ink-500">
           {films.length} other {films.length === 1 ? "film" : "films"}
         </div>

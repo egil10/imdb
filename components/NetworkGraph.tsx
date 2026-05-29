@@ -28,6 +28,7 @@ export function NetworkGraph({
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 800, h: 600 });
+  const [hoverId, setHoverId] = useState<string | null>(null);
   const fgRef = useRef<any>(null);
 
   useEffect(() => {
@@ -41,7 +42,45 @@ export function NetworkGraph({
     return () => ro.disconnect();
   }, []);
 
+  // memoize graph data so the force layout doesn't re-init constantly.
+  const gdata = useMemo(
+    () => ({
+      nodes: data.nodes.map((n) => ({ ...n })),
+      links: data.links.map((l) => ({ ...l })),
+    }),
+    [data],
+  );
+
+  // Adjacency built from the original (string) links — used to highlight a
+  // node's immediate connections on hover. force-graph mutates link endpoints
+  // into objects, so we read from `data` before that happens.
+  const neighbors = useMemo(() => {
+    const m = new Map<string, Set<string>>();
+    const add = (a: string, b: string) => {
+      (m.get(a) ?? m.set(a, new Set()).get(a)!).add(b);
+    };
+    for (const l of data.links) {
+      const s = l.source as unknown as string;
+      const t = l.target as unknown as string;
+      add(s, t);
+      add(t, s);
+    }
+    return m;
+  }, [data]);
+
+  // Show labels much earlier than before. Small graphs label almost
+  // immediately; only very dense ones hold back until you zoom in a touch, so
+  // the canvas never turns into a wall of overlapping text.
+  const labelThreshold = useMemo(() => {
+    const n = data.nodes.length;
+    if (n > 280) return 0.95;
+    if (n > 120) return 0.6;
+    return 0.28;
+  }, [data.nodes.length]);
+
   // Tune the underlying d3-force layout to give nodes more breathing room.
+  // Re-applied whenever the graph data changes (force-graph rebuilds its
+  // simulation on new data, resetting these).
   useEffect(() => {
     const fg = fgRef.current;
     if (!fg) return;
@@ -55,16 +94,7 @@ export function NetworkGraph({
       return sIsActor && tIsActor ? 90 : 70;
     });
     fg.d3Force("center")?.strength(0.06);
-  });
-
-  // memoize graph data so the force layout doesn't re-init constantly.
-  const gdata = useMemo(
-    () => ({
-      nodes: data.nodes.map((n) => ({ ...n })),
-      links: data.links.map((l) => ({ ...l })),
-    }),
-    [data],
-  );
+  }, [gdata]);
 
   // re-zoom whenever focal changes
   useEffect(() => {
@@ -73,6 +103,8 @@ export function NetworkGraph({
     }, 250);
     return () => clearTimeout(t);
   }, [focalId, gdata]);
+
+  const hoverNeighbors = hoverId ? neighbors.get(hoverId) : undefined;
 
   return (
     <div ref={ref} className="absolute inset-0 dot-grid">
@@ -93,34 +125,47 @@ export function NetworkGraph({
           if (highlightPath && highlightPath.has(sid) && highlightPath.has(tid)) {
             return "rgba(124, 58, 237, 0.85)"; // violet-600
           }
-          return "rgba(15,15,20,0.10)";
+          if (hoverId && (sid === hoverId || tid === hoverId)) {
+            return "rgba(245, 158, 11, 0.7)"; // amber, edges of hovered node
+          }
+          return hoverId ? "rgba(15,15,20,0.04)" : "rgba(15,15,20,0.10)";
         }}
         linkWidth={(l: any) => {
           const sid = typeof l.source === "object" ? l.source.id : l.source;
           const tid = typeof l.target === "object" ? l.target.id : l.target;
           if (highlightPath && highlightPath.has(sid) && highlightPath.has(tid)) return 2.4;
+          if (hoverId && (sid === hoverId || tid === hoverId)) return 1.8;
           return 1;
         }}
         nodeCanvasObject={(node: any, ctx, globalScale) => {
+          // Skip render until force layout has assigned finite coordinates.
+          if (!Number.isFinite(node.x) || !Number.isFinite(node.y)) return;
+
           const isFocal = node.id === focalId;
           const isTarget = node.id === targetId;
           const isHighlighted = highlightPath?.has(node.id);
           const isActor = node.type === "actor";
+          const isHover = node.id === hoverId;
+          const isNeighbor = hoverNeighbors?.has(node.id) ?? false;
+
+          // When hovering, fade everything that isn't the node or its neighbors
+          // so the local connections pop.
+          const dimmed = !!hoverId && !isHover && !isNeighbor && !isHighlighted;
+          ctx.save();
+          if (dimmed) ctx.globalAlpha = 0.18;
 
           // Radius scales with popularity (weight is 0..1).
-          // Movies: 3.5 → 11 (radius gets larger with vote count).
-          // Actors: 3 → 7.5  (radius gets larger with filmography size).
-          // Focal node is always bumped to ~14 so it dominates visually.
+          // Movies: 3.5 → 11 (radius grows with vote count).
+          // Actors: 3 → 7.5  (radius grows with filmography size).
+          // Focal node is always bumped so it dominates visually.
           const w = typeof node.weight === "number" ? node.weight : 0.4;
           let r: number;
           if (isFocal) r = 14;
           else if (isActor) r = 3 + w * 4.5;
           else r = 3.5 + w * 7.5;
+          if (isHover) r += 1.5;
 
           const label = node.label as string;
-
-          // Skip render until force layout has assigned finite coordinates.
-          if (!Number.isFinite(node.x) || !Number.isFinite(node.y)) return;
 
           // node circle
           ctx.beginPath();
@@ -178,27 +223,39 @@ export function NetworkGraph({
             ctx.stroke();
           }
 
-          // labels: focal/target always, others when zoomed in or highlighted
-          const show = isFocal || isTarget || isHighlighted || globalScale > 1.6;
-          if (show) {
-            const fontSize = isFocal ? 13 / Math.max(1, globalScale * 0.9) + 4 : 10 / globalScale + 2;
-            ctx.font = `${isFocal ? 600 : 500} ${fontSize}px -apple-system, "SF Pro Text", Inter, sans-serif`;
+          // Labels: always for focal/target/hovered/highlighted + neighbors of
+          // the hovered node, otherwise once the user zooms past the (low)
+          // threshold. Font is kept at a constant on-screen size so text is
+          // legible at any zoom level.
+          const show =
+            isFocal ||
+            isTarget ||
+            isHover ||
+            isHighlighted ||
+            (hoverId ? isNeighbor : globalScale > labelThreshold);
+          if (show && !dimmed) {
+            const screenPx = isFocal ? 15 : isActor ? 12.5 : 11.5;
+            const fontSize = screenPx / globalScale;
+            ctx.font = `${isFocal || isActor ? 600 : 500} ${fontSize}px -apple-system, "SF Pro Text", Inter, sans-serif`;
             ctx.textAlign = "center";
             ctx.textBaseline = "top";
-            const pad = 4;
+            const pad = 4 / globalScale;
             const text = label;
             const tw = ctx.measureText(text).width;
             const bx = node.x - tw / 2 - pad;
-            const by = node.y + r + 3;
-            ctx.fillStyle = "rgba(255,255,255,0.86)";
-            roundRect(ctx, bx, by, tw + pad * 2, fontSize + pad * 1.4, 6);
+            const by = node.y + r + 3 / globalScale;
+            ctx.fillStyle = "rgba(255,255,255,0.9)";
+            roundRect(ctx, bx, by, tw + pad * 2, fontSize + pad * 1.4, 6 / globalScale);
             ctx.fill();
             ctx.fillStyle = "#0c0d10";
             ctx.fillText(text, node.x, by + pad * 0.6);
           }
+
+          ctx.restore();
         }}
         onNodeClick={(n: any) => onNodeClick?.(n)}
         onNodeHover={(n: any) => {
+          setHoverId(n ? n.id : null);
           if (typeof document !== "undefined") {
             document.body.style.cursor = n ? "pointer" : "";
           }

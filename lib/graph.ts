@@ -14,10 +14,21 @@ export type GraphNode = {
 export type GraphLink = { source: string; target: string };
 export type GraphData = { nodes: GraphNode[]; links: GraphLink[] };
 
-// Cap how many of an actor's other films we surface in a focal-movie graph.
-// IMDb veterans like Samuel L. Jackson have 100+ entries — without a cap, one
-// focal film can explode the graph into hundreds of nodes.
-const MAX_OTHER_FILMS_PER_ACTOR = 8;
+// What the canvas is currently centered on. The graph can be driven by either
+// a film (its cast + their filmographies) or an actor (their whole career).
+export type Focus =
+  | { kind: "movie"; id: string }
+  | { kind: "actor"; id: string };
+
+// Soft ceiling on how many nodes a single focal-film view should contain.
+// We expand every cast member's full filmography, but if the total would blow
+// past this budget we trim each actor proportionally so the canvas stays
+// legible and the layout stays fast. A lone film with a small cast shows
+// *everything*; a star-studded one shares the budget across the cast.
+const MOVIE_VIEW_NODE_BUDGET = 650;
+// Never show fewer than this many films per actor, even in a crowded cast —
+// otherwise the budget trim could starve everyone down to a couple of films.
+const MIN_FILMS_PER_ACTOR = 10;
 
 import { hueFor } from "./dataset";
 
@@ -33,6 +44,13 @@ function weightForActorFilms(count: number): number {
   if (count <= 1) return 0;
   const x = (Math.log10(count) - 0) / (Math.log10(100) - 0);
   return Math.max(0, Math.min(1, x));
+}
+
+// Dispatch to the right builder based on what the user is focused on.
+export function buildGraph(d: Dataset, focus: Focus): GraphData {
+  return focus.kind === "actor"
+    ? buildActorGraph(d, focus.id)
+    : buildMovieGraph(d, focus.id);
 }
 
 export function buildMovieGraph(d: Dataset, movieId: string): GraphData {
@@ -62,6 +80,15 @@ export function buildMovieGraph(d: Dataset, movieId: string): GraphData {
     weight: weightForVotes(focal.votes),
   });
 
+  // Share the node budget across the cast: a tiny cast can each show their
+  // whole career; a packed one gets a fair per-actor slice (never below the
+  // floor). Films are pre-sorted by votes, so trimming keeps the best-known.
+  const castSize = Math.max(1, focal.cast.length);
+  const perActorCap = Math.max(
+    MIN_FILMS_PER_ACTOR,
+    Math.floor(MOVIE_VIEW_NODE_BUDGET / castSize),
+  );
+
   for (const actorId of focal.cast) {
     const actorNodeId = `actor:${actorId}`;
     const filmCount = (d.filmography[actorId] || []).length;
@@ -74,7 +101,7 @@ export function buildMovieGraph(d: Dataset, movieId: string): GraphData {
     addLink(`movie:${focal.id}`, actorNodeId);
 
     const films = (d.filmography[actorId] || []).filter((mid) => mid !== focal.id);
-    for (const mid of films.slice(0, MAX_OTHER_FILMS_PER_ACTOR)) {
+    for (const mid of films.slice(0, perActorCap)) {
       const m = d.moviesById[mid];
       if (!m) continue;
       const mNodeId = `movie:${m.id}`;
@@ -93,6 +120,41 @@ export function buildMovieGraph(d: Dataset, movieId: string): GraphData {
   return { nodes: Array.from(nodes.values()), links };
 }
 
+// Actor-centric view: the actor sits at the middle and *every* film in their
+// filmography radiates out as its own node — 30 films → 30 spokes. This is the
+// "show me everything on Cillian Murphy" view.
+export function buildActorGraph(d: Dataset, actorId: string): GraphData {
+  const films = d.filmography[actorId];
+  if (!films) return { nodes: [], links: [] };
+
+  const nodes: GraphNode[] = [];
+  const links: GraphLink[] = [];
+  const actorNodeId = `actor:${actorId}`;
+
+  nodes.push({
+    id: actorNodeId,
+    type: "actor",
+    label: d.actorNamesById[actorId] || actorId,
+    weight: weightForActorFilms(films.length),
+  });
+
+  for (const mid of films) {
+    const m = d.moviesById[mid];
+    if (!m) continue;
+    nodes.push({
+      id: `movie:${m.id}`,
+      type: "movie",
+      label: m.title,
+      year: m.year,
+      hue: hueFor(m),
+      weight: weightForVotes(m.votes),
+    });
+    links.push({ source: actorNodeId, target: `movie:${m.id}` });
+  }
+
+  return { nodes, links };
+}
+
 export type PathStep =
   | { type: "movie"; id: string; title: string; year: number }
   | { type: "actor"; id: string; name: string };
@@ -109,9 +171,11 @@ export function findPath(d: Dataset, fromId: string, toId: string): PathStep[] |
   const prev = new Map<string, string | null>();
   prev.set(start, null);
 
+  // Head-pointer queue keeps this BFS linear (Array.shift is O(n)).
   const queue: string[] = [start];
-  while (queue.length) {
-    const node = queue.shift()!;
+  let head = 0;
+  while (head < queue.length) {
+    const node = queue[head++];
     if (node === goal) break;
     if (node.startsWith("m:")) {
       const movie = d.moviesById[node.slice(2)];

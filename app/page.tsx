@@ -2,11 +2,12 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useDataset, type Movie } from "@/lib/dataset";
-import { buildMovieGraph, type GraphData } from "@/lib/graph";
+import { buildGraph, buildMovieGraph, type Focus, type GraphData } from "@/lib/graph";
 import { DockHeader, type Mode } from "@/components/DockHeader";
 import { MovieSearch } from "@/components/MovieSearch";
 import { NetworkGraph } from "@/components/NetworkGraph";
 import { InfoPanel } from "@/components/InfoPanel";
+import { ActorPanel } from "@/components/ActorPanel";
 import { BaconGame } from "@/components/BaconGame";
 import { Loader2, Wand2 } from "lucide-react";
 
@@ -15,7 +16,11 @@ type TrailItem = { kind: "movie"; id: string } | { kind: "actor"; id: string };
 export default function Home() {
   const dataset = useDataset();
   const [mode, setMode] = useState<Mode>("map");
-  const [focal, setFocal] = useState<Movie | null>(null);
+  // The canvas can be centered on a film *or* an actor — clicking either kind
+  // of node retargets it.
+  const [focus, setFocus] = useState<Focus | null>(null);
+  const focusMovie =
+    focus?.kind === "movie" ? dataset?.moviesById[focus.id] ?? null : null;
 
   const [game, setGame] = useState<{
     from: Movie | null;
@@ -25,41 +30,41 @@ export default function Home() {
     optimal: { type: "movie" | "actor"; id: string }[];
   }>({ from: null, to: null, trail: [], revealOptimal: false, optimal: [] });
 
-  // Seed focal once the dataset loads.
+  // Seed focus once the dataset loads.
   useEffect(() => {
-    if (!dataset || focal) return;
+    if (!dataset || focus) return;
     const preferred = ["tt15398776", "tt1375666", "tt0468569", "tt0110912"]; // Oppenheimer, Inception, Dark Knight, Pulp Fiction
     for (const id of preferred) {
-      const m = dataset.moviesById[id];
-      if (m) {
-        setFocal(m);
+      if (dataset.moviesById[id]) {
+        setFocus({ kind: "movie", id });
         return;
       }
     }
-    setFocal([...dataset.movies].sort((a, b) => b.votes - a.votes)[0] ?? null);
-  }, [dataset, focal]);
+    const top = [...dataset.movies].sort((a, b) => b.votes - a.votes)[0];
+    if (top) setFocus({ kind: "movie", id: top.id });
+  }, [dataset, focus]);
 
-  // In map mode, the focal drives the graph. In game mode, the *current* trail
+  // In map mode, the focus drives the graph. In game mode, the *current* trail
   // tip drives it so the canvas tracks the player.
   const graph: GraphData = useMemo(() => {
     if (!dataset) return { nodes: [], links: [] };
-    let sourceMovieId: string | null = null;
-    if (mode === "map") sourceMovieId = focal?.id ?? null;
-    else if (mode === "degrees") {
-      const lastMovie = [...game.trail].reverse().find((t) => t.kind === "movie");
-      sourceMovieId = lastMovie?.id ?? game.from?.id ?? null;
+    if (mode === "map") {
+      return focus ? buildGraph(dataset, focus) : { nodes: [], links: [] };
     }
+    // degrees mode
+    const lastMovie = [...game.trail].reverse().find((t) => t.kind === "movie");
+    const sourceMovieId = lastMovie?.id ?? game.from?.id ?? null;
     if (!sourceMovieId) return { nodes: [], links: [] };
     return buildMovieGraph(dataset, sourceMovieId);
-  }, [dataset, mode, focal, game.trail, game.from]);
+  }, [dataset, mode, focus, game.trail, game.from]);
 
   const focalNodeId = useMemo(() => {
     if (mode === "degrees") {
       const lastMovie = [...game.trail].reverse().find((t) => t.kind === "movie");
       return lastMovie ? `movie:${lastMovie.id}` : game.from ? `movie:${game.from.id}` : undefined;
     }
-    return focal ? `movie:${focal.id}` : undefined;
-  }, [mode, focal, game.trail, game.from]);
+    return focus ? `${focus.kind}:${focus.id}` : undefined;
+  }, [mode, focus, game.trail, game.from]);
 
   // What to highlight on the canvas in degrees mode:
   // - the trail itself (always)
@@ -98,7 +103,7 @@ export default function Home() {
 
           <div className="border-t border-black/[0.04]" />
 
-          {!dataset || !focal ? (
+          {!dataset || !focus ? (
             <div className="flex-1 grid place-items-center p-6">
               <div className="flex flex-col items-center gap-2 text-ink-500 text-[13px]">
                 <Loader2 className="h-5 w-5 animate-spin text-violet-500" />
@@ -112,19 +117,26 @@ export default function Home() {
             <div className="flex flex-1 min-h-0 flex-col gap-3 px-4 pt-3 pb-4">
               <MovieSearch
                 dataset={dataset}
-                value={focal}
-                onChange={(m) => setFocal(m)}
+                value={focusMovie}
+                onChange={(m) => setFocus({ kind: "movie", id: m.id })}
                 placeholder="Search any film…"
               />
               <div className="flex-1 min-h-0">
-                <InfoPanel
-                  dataset={dataset}
-                  movie={focal}
-                  onPickMovie={(id) => {
-                    const m = dataset.moviesById[id];
-                    if (m) setFocal(m);
-                  }}
-                />
+                {focus.kind === "actor" ? (
+                  <ActorPanel
+                    dataset={dataset}
+                    actorId={focus.id}
+                    onPickMovie={(id) => setFocus({ kind: "movie", id })}
+                    onPickActor={(id) => setFocus({ kind: "actor", id })}
+                  />
+                ) : focusMovie ? (
+                  <InfoPanel
+                    dataset={dataset}
+                    movie={focusMovie}
+                    onPickMovie={(id) => setFocus({ kind: "movie", id })}
+                    onPickActor={(id) => setFocus({ kind: "actor", id })}
+                  />
+                ) : null}
               </div>
             </div>
           ) : (
@@ -168,11 +180,15 @@ export default function Home() {
           targetId={targetNodeId}
           highlightPath={highlightSet}
           onNodeClick={(n) => {
-            if (!dataset) return;
-            if (n.type === "movie" && mode === "map") {
+            if (!dataset || mode !== "map") return;
+            // Every node is now actionable: a film recenters on that film,
+            // an actor opens their full-career constellation.
+            if (n.type === "movie") {
               const id = n.id.replace(/^movie:/, "");
-              const m = dataset.moviesById[id];
-              if (m) setFocal(m);
+              if (dataset.moviesById[id]) setFocus({ kind: "movie", id });
+            } else {
+              const id = n.id.replace(/^actor:/, "");
+              if (dataset.filmography[id]) setFocus({ kind: "actor", id });
             }
           }}
         />
@@ -183,11 +199,11 @@ export default function Home() {
         <div className="glass pill flex items-center gap-3 px-4 py-2 text-[12px] animate-fade-in">
           {mode === "map" ? (
             <>
-              <Legend swatch="bg-violet-600" label="Focal film" />
-              <Legend swatch="bg-amber-500" label="Actor" />
+              <Legend swatch="bg-violet-600" label="In focus" />
+              <Legend swatch="bg-amber-500" label="Actor · click to expand" />
               <Legend
                 swatch="bg-gradient-to-br from-sky-400 to-fuchsia-400"
-                label="Other films"
+                label="Film · click to recenter"
               />
             </>
           ) : (

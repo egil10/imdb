@@ -165,10 +165,13 @@ function computeMainComponent(
   for (const start in adj) {
     if (seen.has(start)) continue;
     const ids = new Set<string>();
+    // Use a head pointer instead of Array.shift() (which is O(n)) so the whole
+    // ~97k-node scan stays linear rather than quadratic.
     const queue: string[] = [start];
+    let head = 0;
     seen.add(start);
-    while (queue.length) {
-      const n = queue.shift()!;
+    while (head < queue.length) {
+      const n = queue[head++];
       ids.add(n);
       const nb = adj[n];
       if (!nb) continue;
