@@ -92,8 +92,8 @@ export function GameMode({
 
   return (
     <>
-      {/* ── Goal + trail, top center ─────────────────────────────────── */}
-      <div className="pointer-events-none fixed left-1/2 top-4 z-30 flex w-[min(96vw,880px)] -translate-x-1/2 flex-col items-center gap-2">
+      {/* ── Goal + trail, top center (offset clear of the dock on desktop) ── */}
+      <div className="pointer-events-none fixed inset-x-0 top-4 z-30 flex flex-col items-center gap-2 px-4 lg:pl-[372px]">
         <div className="glass-strong pointer-events-auto flex items-center gap-2.5 rounded-2xl px-3 py-2">
           <Endpoint
             id={challenge.from.id}
