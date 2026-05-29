@@ -1,4 +1,5 @@
-import type { Dataset } from "./dataset";
+import type { Actor, Dataset } from "./dataset";
+import { pickRandomActor } from "./dataset";
 
 export type GraphNode = {
   id: string;
@@ -44,6 +45,40 @@ function weightForActorFilms(count: number): number {
   if (count <= 1) return 0;
   const x = (Math.log10(count) - 0) / (Math.log10(100) - 0);
   return Math.max(0, Math.min(1, x));
+}
+
+// Which node categories are visible on the canvas. The focal node is always
+// kept regardless of filters.
+export type GraphFilters = { actors: boolean; films: boolean };
+
+// Hide whole node categories so the user can declutter the view (e.g. drop the
+// outer film ring to see just a film and its cast). Links to hidden nodes are
+// removed, and any non-focal node left with no links is pruned.
+export function applyGraphFilters(
+  g: GraphData,
+  focalId: string | undefined,
+  filters: GraphFilters,
+): GraphData {
+  if (filters.actors && filters.films) return g;
+
+  const keep = new Set<string>();
+  for (const n of g.nodes) {
+    if (n.id === focalId) keep.add(n.id);
+    else if (n.type === "actor" && filters.actors) keep.add(n.id);
+    else if (n.type === "movie" && filters.films) keep.add(n.id);
+  }
+
+  const links = g.links.filter((l) => keep.has(l.source) && keep.has(l.target));
+
+  const linked = new Set<string>();
+  for (const l of links) {
+    linked.add(l.source);
+    linked.add(l.target);
+  }
+  const nodes = g.nodes.filter(
+    (n) => keep.has(n.id) && (n.id === focalId || linked.has(n.id)),
+  );
+  return { nodes, links };
 }
 
 // Dispatch to the right builder based on what the user is focused on.
@@ -219,4 +254,110 @@ export function findPath(d: Dataset, fromId: string, toId: string): PathStep[] |
     const aid = nid.slice(2);
     return { type: "actor", id: aid, name: d.actorNamesById[aid] || aid };
   });
+}
+
+// ── Six Degrees: actor → actor through shared films ─────────────────────────
+// The game now travels between two *actors*, hopping through the films they
+// share with the cast in between (actor → film → actor → film → … → actor).
+
+export type ActorChallenge = {
+  from: Actor;
+  to: Actor;
+  optimal: PathStep[]; // actor, movie, actor, … , actor
+};
+
+// Number of films ("degrees") separating the two actors along a path.
+export function hopsOf(path: PathStep[]): number {
+  return path.filter((s) => s.type === "movie").length;
+}
+
+// Shortest actor → actor path over the bipartite graph. The returned chain
+// alternates actor, movie, actor, … and always starts and ends on an actor.
+export function findActorPath(
+  d: Dataset,
+  fromActorId: string,
+  toActorId: string,
+): PathStep[] | null {
+  if (fromActorId === toActorId) {
+    const name = d.actorNamesById[fromActorId];
+    return name !== undefined
+      ? [{ type: "actor", id: fromActorId, name }]
+      : null;
+  }
+
+  const start = `a:${fromActorId}`;
+  const goal = `a:${toActorId}`;
+  const prev = new Map<string, string | null>();
+  prev.set(start, null);
+
+  const queue: string[] = [start];
+  let head = 0;
+  while (head < queue.length) {
+    const node = queue[head++];
+    if (node === goal) break;
+    if (node.startsWith("a:")) {
+      const aid = node.slice(2);
+      for (const mid of d.filmography[aid] || []) {
+        const next = `m:${mid}`;
+        if (!prev.has(next)) {
+          prev.set(next, node);
+          queue.push(next);
+        }
+      }
+    } else {
+      const movie = d.moviesById[node.slice(2)];
+      if (!movie) continue;
+      for (const aid of movie.cast) {
+        const next = `a:${aid}`;
+        if (!prev.has(next)) {
+          prev.set(next, node);
+          queue.push(next);
+          if (next === goal) {
+            head = queue.length; // stop the outer loop
+            break;
+          }
+        }
+      }
+    }
+  }
+  if (!prev.has(goal)) return null;
+
+  const chain: string[] = [];
+  let cur: string | null = goal;
+  while (cur) {
+    chain.unshift(cur);
+    cur = prev.get(cur) ?? null;
+  }
+
+  return chain.map((nid): PathStep => {
+    if (nid.startsWith("m:")) {
+      const m = d.moviesById[nid.slice(2)]!;
+      return { type: "movie", id: m.id, title: m.title, year: m.year };
+    }
+    const aid = nid.slice(2);
+    return { type: "actor", id: aid, name: d.actorNamesById[aid] || aid };
+  });
+}
+
+// Pick two actors from the giant component (so a path is guaranteed) whose
+// shortest connection lands in a fun 2–4 film range, retrying for a bit.
+export function pickSolvableActorChallenge(
+  d: Dataset,
+  minHops = 2,
+  maxHops = 4,
+): ActorChallenge {
+  let fallback: ActorChallenge | null = null;
+  for (let i = 0; i < 40; i++) {
+    const a = pickRandomActor(d);
+    const b = pickRandomActor(d, a.id);
+    const path = findActorPath(d, a.id, b.id);
+    if (!path) continue;
+    const hops = hopsOf(path);
+    if (hops >= minHops && hops <= maxHops) return { from: a, to: b, optimal: path };
+    if (!fallback && hops > 0) fallback = { from: a, to: b, optimal: path };
+  }
+  if (fallback) return fallback;
+  const a = pickRandomActor(d);
+  const b = pickRandomActor(d, a.id);
+  return { from: a, to: b, optimal: findActorPath(d, a.id, b.id) ?? [] };
 }

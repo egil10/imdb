@@ -23,47 +23,73 @@ export type Dataset = {
   // Largest connected component of the bipartite movie-actor graph.
   // ~95.7% of all movies live here; the rest are foreign-cinema islands.
   mainComponent: Set<string>; // movie ids in the giant component
-  // List form for cheap random sampling.
+  mainComponentActors: Set<string>; // actor ids in the giant component
+  // List forms for cheap random sampling.
   mainComponentMovies: Movie[];
+  mainComponentActorList: Actor[];
 };
 
 let cache: Dataset | null = null;
 let inflight: Promise<Dataset> | null = null;
 
+// Hue bands reserved for node *roles*, so a film's colour can never be confused
+// with the focal node (violet) or an actor (amber). Genre + hash hues steer
+// clear of these.
+const RESERVED_HUE_BANDS: [number, number][] = [
+  [28, 52], // amber — actors
+  [258, 288], // violet — focal / central
+];
+
+function inReservedBand(h: number): boolean {
+  return RESERVED_HUE_BANDS.some(([a, b]) => h >= a && h <= b);
+}
+
 function deriveHue(s: string): number {
   let h = 0;
   for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
-  return h % 360;
+  h = h % 360;
+  // Nudge out of the reserved role bands so unknown-genre films stay visually
+  // distinct from focal/actor nodes.
+  let guard = 0;
+  while (inReservedBand(h) && guard++ < 24) h = (h + 19) % 360;
+  return h;
+}
+
+// Main-genre → hue band, so the graph reads visually by genre. Exported so the
+// on-map legend renders the exact same colours as the nodes.
+export const GENRE_HUES: Record<string, number> = {
+  action: 0,
+  adventure: 18,
+  animation: 320,
+  biography: 200,
+  comedy: 54, // out of the amber band
+  crime: 220,
+  documentary: 180,
+  drama: 246, // out of the violet band
+  family: 296,
+  fantasy: 310,
+  history: 24,
+  horror: 350,
+  music: 62,
+  musical: 84,
+  mystery: 234,
+  romance: 332,
+  "sci-fi": 192,
+  sport: 108,
+  thriller: 252,
+  war: 8,
+  western: 26,
+};
+
+// Turn a hue into the exact fill the canvas uses for a film node.
+export function colorForHue(hue: number): string {
+  return `hsl(${hue} 65% 58%)`;
 }
 
 export function hueFor(movie: { id: string; genres?: string; title: string }): number {
   if (movie.genres) {
-    // map main genre to a hue band so the graph reads visually
     const g = movie.genres.split(",")[0].toLowerCase();
-    const map: Record<string, number> = {
-      action: 0,
-      adventure: 20,
-      animation: 320,
-      biography: 200,
-      comedy: 45,
-      crime: 220,
-      documentary: 180,
-      drama: 260,
-      family: 290,
-      fantasy: 310,
-      history: 30,
-      horror: 350,
-      music: 60,
-      musical: 80,
-      mystery: 240,
-      romance: 330,
-      "sci-fi": 195,
-      sport: 100,
-      thriller: 250,
-      war: 10,
-      western: 25,
-    };
-    if (map[g] !== undefined) return map[g];
+    if (GENRE_HUES[g] !== undefined) return GENRE_HUES[g];
   }
   return deriveHue(movie.id || movie.title);
 }
@@ -91,9 +117,13 @@ async function fetchDataset(): Promise<Dataset> {
       filmography[aid].sort((a, b) => moviesById[b].votes - moviesById[a].votes);
     }
 
-    const { mainComponent, mainComponentMovies } = computeMainComponent(
+    const { mainComponent, mainComponentActors } = computeMainComponent(
       raw.movies,
       filmography,
+    );
+    const mainComponentMovies = raw.movies.filter((m) => mainComponent.has(m.id));
+    const mainComponentActorList = raw.actors.filter((a) =>
+      mainComponentActors.has(a.id),
     );
 
     cache = {
@@ -103,7 +133,9 @@ async function fetchDataset(): Promise<Dataset> {
       actorNamesById,
       filmography,
       mainComponent,
+      mainComponentActors,
       mainComponentMovies,
+      mainComponentActorList,
     };
     return cache;
   })();
@@ -141,12 +173,34 @@ export function pickRandomMovie(
   return m;
 }
 
+// Sample an actor from the giant component (so an actor↔actor path is
+// guaranteed to exist). Optionally require a minimum filmography so the puzzle
+// has room to breathe.
+export function pickRandomActor(
+  d: Dataset,
+  exclude?: string,
+  minFilms = 2,
+): Actor {
+  const pool = d.mainComponentActorList;
+  let a: Actor;
+  let guard = 0;
+  do {
+    a = pool[Math.floor(Math.random() * pool.length)];
+    guard++;
+  } while (
+    guard < 50 &&
+    ((exclude && a.id === exclude) ||
+      (d.filmography[a.id]?.length ?? 0) < minFilms)
+  );
+  return a;
+}
+
 // One BFS over the bipartite graph to find the largest connected component.
 // Runs once at dataset load (~80k nodes, completes in milliseconds).
 function computeMainComponent(
   movies: Movie[],
   filmography: Record<string, string[]>,
-): { mainComponent: Set<string>; mainComponentMovies: Movie[] } {
+): { mainComponent: Set<string>; mainComponentActors: Set<string> } {
   /** @type {Map<string, string[]>} */
   const adj: Record<string, string[]> = Object.create(null);
   for (const m of movies) {
@@ -186,11 +240,12 @@ function computeMainComponent(
   }
 
   const mainComponent = new Set<string>();
+  const mainComponentActors = new Set<string>();
   if (best) {
     for (const nid of best.ids) {
       if (nid.startsWith("m:")) mainComponent.add(nid.slice(2));
+      else mainComponentActors.add(nid.slice(2));
     }
   }
-  const mainComponentMovies = movies.filter((m) => mainComponent.has(m.id));
-  return { mainComponent, mainComponentMovies };
+  return { mainComponent, mainComponentActors };
 }

@@ -208,31 +208,54 @@ export function NetworkGraph({
             ctx.strokeStyle = "white";
             ctx.stroke();
           } else if (isActor) {
-            ctx.fillStyle = "#f59e0b"; // amber
+            // amber sphere — reserved role colour, lit from top-left
+            const g = ctx.createRadialGradient(
+              node.x - r * 0.35,
+              node.y - r * 0.35,
+              r * 0.1,
+              node.x,
+              node.y,
+              r,
+            );
+            g.addColorStop(0, "#fcd34d"); // amber-300
+            g.addColorStop(1, "#f59e0b"); // amber-500
+            ctx.fillStyle = g;
             ctx.fill();
             ctx.lineWidth = 0.8;
             ctx.strokeStyle = "white";
             ctx.stroke();
           } else {
-            // other movie
+            // other film — genre-hued sphere gradient
             const hue = (node.hue ?? 220) as number;
-            ctx.fillStyle = `hsl(${hue} 65% 58%)`;
+            const g = ctx.createRadialGradient(
+              node.x - r * 0.35,
+              node.y - r * 0.35,
+              r * 0.1,
+              node.x,
+              node.y,
+              r,
+            );
+            g.addColorStop(0, `hsl(${hue} 82% 70%)`);
+            g.addColorStop(1, `hsl(${hue} 62% 48%)`);
+            ctx.fillStyle = g;
             ctx.fill();
             ctx.lineWidth = 0.8;
             ctx.strokeStyle = "white";
             ctx.stroke();
           }
 
-          // Labels: always for focal/target/hovered/highlighted + neighbors of
-          // the hovered node, otherwise once the user zooms past the (low)
-          // threshold. Font is kept at a constant on-screen size so text is
-          // legible at any zoom level.
+          // Labels reveal gradually by importance: the focal node is always
+          // named, then bigger nodes surface first and smaller ones only as you
+          // keep zooming in — so the hierarchy reads outward from the centre
+          // (focal → biggest → next level → …) instead of all at once. Font is
+          // kept at a constant on-screen size so text stays legible at any zoom.
+          const reveal = labelThreshold * (1.65 - w); // bigger w → earlier
           const show =
             isFocal ||
             isTarget ||
             isHover ||
             isHighlighted ||
-            (hoverId ? isNeighbor : globalScale > labelThreshold);
+            (hoverId ? isNeighbor : globalScale > reveal);
           if (show && !dimmed) {
             const screenPx = isFocal ? 15 : isActor ? 12.5 : 11.5;
             const fontSize = screenPx / globalScale;
